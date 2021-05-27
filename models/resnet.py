@@ -10,24 +10,24 @@ class DoubleConv(nn.Module):
                  identity_downsample=None, 
                  stride=1):
         super(DoubleConv, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, 1)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, stride=stride, padding=1)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, stride=stride, padding=1)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(out_channels)
-        self.conv3 = nn.Conv2d(out_channels, out_channels*self.expansion, 1)
-        self.bn3 = nn.BatchNorm2d(out_channels*self.expansion)
 
         self.identity_downsample = identity_downsample
         
-        self.relu = nn.ReLU()
+        self.relu = nn.ReLU(inplace=True)
         
     def forward(self, x):
         identity = x
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+        print(x.shape)
         x = self.conv2(x)
         x = self.bn2(x)
+        print(x.shape)
 
         if self.identity_downsample is not None:
             identity = self.identity_downsample(identity)
@@ -130,8 +130,3 @@ def ResNet34(img_channels=3, num_classes=1000): return ResNet(DoubleConv, [3, 4,
 def ResNet50(img_channels=3, num_classes=1000): return ResNet(TripleConv, [3, 4, 6, 3], img_channels, num_classes)
 def ResNet101(img_channels=3, num_classes=1000): return ResNet(TripleConv, [3, 4, 23, 3], img_channels, num_classes)
 def ResNet152(img_channels=3, num_classes=1000): return ResNet(TripleConv, [3, 8, 36, 3], img_channels, num_classes)
-
-net = ResNet18()
-x = torch.rand(2, 3, 224, 224)
-y = net(x).to('cuda')
-print(y.shape)
