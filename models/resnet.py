@@ -24,10 +24,8 @@ class DoubleConv(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        print(x.shape)
         x = self.conv2(x)
         x = self.bn2(x)
-        print(x.shape)
 
         if self.identity_downsample is not None:
             identity = self.identity_downsample(identity)
