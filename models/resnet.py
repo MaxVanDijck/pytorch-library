@@ -37,11 +37,7 @@ class DoubleConv(nn.Module):
 class TripleConv(nn.Module):
     expansion = 4
 
-    def __init__(self, 
-                 in_channels, 
-                 out_channels, 
-                 identity_downsample=None, 
-                 stride=1):
+    def __init__(self, in_channels, out_channels, identity_downsample=None, stride=1):
         super(TripleConv, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, 1)
         self.bn1 = nn.BatchNorm2d(out_channels)
