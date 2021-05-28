@@ -109,7 +109,7 @@ class ResNet(nn.Module):
                                                           out_channels*block.expansion,
                                                           kernel_size=1,
                                                           stride=stride),
-                                               nn.BatchNorm2d(out_channels*block.expansion))
+                                                nn.BatchNorm2d(out_channels*block.expansion))
         
         layers.append(block(self.in_channels, out_channels, identity_downsample, stride))
         self.in_channels = out_channels*block.expansion 
