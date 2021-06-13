@@ -1,2 +1,1 @@
-# TorchLibrary
- 
+# PyTorch Blaze
