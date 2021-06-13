@@ -3,7 +3,6 @@ import torch.nn as nn
 from math import ceil
 
 class CNNBlock(nn.Module):
-
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -11,7 +10,7 @@ class CNNBlock(nn.Module):
                  stride,
                  padding,
                  groups=1,
-    ):
+                 ):
         super(CNNBlock, self).__init__()
         self.cnn = nn.Conv2d(in_channels,
                              out_channels,
@@ -27,11 +26,9 @@ class CNNBlock(nn.Module):
         x = self.cnn(x)
         x = self.bn(x)
         x = self.silu(x)
-        print(x.shape)
         return x
 
 class SEBlock(nn.Module):
-
     def __init__(self, in_channels, out_channels):
         super(SEBlock, self).__init__()
         self.pool2d = nn.AdaptiveAvgPool2d(1)
@@ -166,11 +163,11 @@ phi_values = {
     "b7": (6, 600, 0.5),
 }
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-version = 'b0'
-phi, res, drop_rate = phi_values[version]
-num_examples, num_classes = 4, 10
-x = torch.randn((num_examples, 3, res, res)).to(device)
-model = EfficientNet(version = version, num_classes=num_classes).to(device)
-
-print(model(x).shape)
+def EfficientNetB0(num_classes=1000): return EfficientNet(version='b0', num_classes=num_classes)
+def EfficientNetB1(num_classes=1000): return EfficientNet(version='b1', num_classes=num_classes)
+def EfficientNetB2(num_classes=1000): return EfficientNet(version='b2', num_classes=num_classes)
+def EfficientNetB3(num_classes=1000): return EfficientNet(version='b3', num_classes=num_classes)
+def EfficientNetB4(num_classes=1000): return EfficientNet(version='b4', num_classes=num_classes)
+def EfficientNetB5(num_classes=1000): return EfficientNet(version='b5', num_classes=num_classes)
+def EfficientNetB6(num_classes=1000): return EfficientNet(version='b6', num_classes=num_classes)
+def EfficientNetB7(num_classes=1000): return EfficientNet(version='b7', num_classes=num_classes)
