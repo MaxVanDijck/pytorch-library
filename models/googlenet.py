@@ -90,7 +90,7 @@ class AuxiliaryBlock(nn.Module):
                               out_channels=128, 
                               kernel_size=1, 
                               stride=1)
-        self.fc1 = nn.Linear(128, 1024)
+        self.fc1 = nn.Linear(2048, 1024)
         self.dropout = nn.Dropout(p=0.7)
         self.fc2 = nn.Linear(1024, num_classes)
         
@@ -99,6 +99,7 @@ class AuxiliaryBlock(nn.Module):
     def forward(self, x):
         x = self.avgpool(x)
         x = self.conv(x)
+        x = x.reshape(x.shape[0], -1)
         x = self.fc1(x)
         x = self.relu(x)
         x = self.dropout(x)
@@ -140,7 +141,10 @@ class Googlenet(nn.Module):
                                           filters_3x3=208,
                                           filters_5x5_reduce=16,
                                           filters_5x5=48,
-                                          filters_max_pool=64)  
+                                          filters_max_pool=64)
+
+        self.aux1 = AuxiliaryBlock(512, num_classes=num_classes)
+
         self.inception4b = InceptionBlock(in_channels=512,
                                           filters_1x1=160,
                                           filters_3x3_reduce=112,
@@ -162,6 +166,9 @@ class Googlenet(nn.Module):
                                           filters_5x5_reduce=32,
                                           filters_5x5=64,
                                           filters_max_pool=64)
+
+        self.aux2 = AuxiliaryBlock(528, num_classes=num_classes)
+
         self.inception4e = InceptionBlock(in_channels=528,
                                           filters_1x1=256,
                                           filters_3x3_reduce=160,
@@ -203,9 +210,11 @@ class Googlenet(nn.Module):
         x = self.inception3b(x)
         x = self.maxpool2(x)
         x = self.inception4a(x)
+        aux1_output = self.aux1(x)
         x = self.inception4b(x)
         x = self.inception4c(x)
         x = self.inception4d(x)
+        aux2_output = self.aux2(x)
         x = self.inception4e(x)
         x = self.maxpool2(x)
         x = self.inception5a(x)
@@ -214,6 +223,6 @@ class Googlenet(nn.Module):
         x = self.dropout(x)
         x = x.reshape(x.shape[0], -1)
         x = self.fc(x)
-        return x
+        return aux1_output, aux2_output, x
 
 def GoogLeNet(img_channels=3, num_classes=1000): return Googlenet(img_channels=img_channels, num_classes=num_classes)
