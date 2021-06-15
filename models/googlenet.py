@@ -79,3 +79,26 @@ class InceptionBlock(nn.Module):
 
         x = torch.cat((output_1x1, output_3x3, output_5x5, output_maxpool), 1)
         return x
+
+class AuxiliaryBlock(nn.Module):
+    def __init__(self, in_channels, num_classes):
+        super(AuxiliaryBlock, self).__init__()
+        self.avgpool = nn.AvgPool2d(kernel_size=5, stride=3)
+        self.conv = ConvBlock(in_channels=in_channels, 
+                              out_channels=128, 
+                              kernel_size=1, 
+                              stride=1)
+        self.fc1 = nn.Linear(128, 1024)
+        self.dropout = nn.Dropout(p=0.7)
+        self.fc2 = nn.Linear(1024, num_classes)
+        
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.avgpool(x)
+        x = self.conv(x)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
