@@ -1,1 +1,1 @@
-# PyTorch Blaze
+# MaxVanDijck's PyTorch Library
