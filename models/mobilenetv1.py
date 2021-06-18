@@ -46,31 +46,31 @@ class Mobilenet(nn.Module):
         self.conv2 = ConvBlockDepthwise(in_channels=int(32*width_multi), out_channels=int(32*width_multi), kernel_size=3, stride=1)
         self.conv3 = ConvBlock(in_channels=int(32*width_multi), out_channels=int(64*width_multi), kernel_size=1, stride=1, padding=0)
         self.conv4 = ConvBlockDepthwise(in_channels=int(64*width_multi), out_channels=int(64*width_multi), kernel_size=3, stride=2)
-        self.conv5 = ConvBlock(in_channels=(64*width_multi), out_channels=int(128*width_multi), kernel_size=1, stride=1, padding=0)
-        self.conv6 = ConvBlockDepthwise(in_channels=(128*width_multi), out_channels=(128*width_multi), kernel_size=3, stride=1)
-        self.conv7 = ConvBlock(in_channels=(128*width_multi), out_channels=(128*width_multi), kernel_size=1, stride=1, padding=0)
-        self.conv8 = ConvBlockDepthwise(in_channels=(128*width_multi), out_channels=(128*width_multi), kernel_size=3, stride=2)
-        self.conv9 = ConvBlock(in_channels=(128*width_multi), out_channels=(256*width_multi), kernel_size=1, stride=1, padding=0)
-        self.conv10 = ConvBlockDepthwise(in_channels=(256*width_multi), out_channels=(256*width_multi), kernel_size=3, stride=1)
-        self.conv11 = ConvBlock(in_channels=(256*width_multi), out_channels=(256*width_multi), kernel_size=1, stride=1, padding=0)
-        self.conv12 = ConvBlockDepthwise(in_channels=(256*width_multi), out_channels=(256*width_multi), kernel_size=3, stride=2)
-        self.conv13 = ConvBlock(in_channels=(256*width_multi), out_channels=(512*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv5 = ConvBlock(in_channels=int(64*width_multi), out_channels=int(128*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv6 = ConvBlockDepthwise(in_channels=int(128*width_multi), out_channels=int(128*width_multi), kernel_size=3, stride=1)
+        self.conv7 = ConvBlock(in_channels=int(128*width_multi), out_channels=int(128*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv8 = ConvBlockDepthwise(in_channels=int(128*width_multi), out_channels=int(128*width_multi), kernel_size=3, stride=2)
+        self.conv9 = ConvBlock(in_channels=int(128*width_multi), out_channels=int(256*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv10 = ConvBlockDepthwise(in_channels=int(256*width_multi), out_channels=int(256*width_multi), kernel_size=3, stride=1)
+        self.conv11 = ConvBlock(in_channels=int(256*width_multi), out_channels=int(256*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv12 = ConvBlockDepthwise(in_channels=int(256*width_multi), out_channels=int(256*width_multi), kernel_size=3, stride=2)
+        self.conv13 = ConvBlock(in_channels=int(256*width_multi), out_channels=int(512*width_multi), kernel_size=1, stride=1, padding=0)
 
         if self.shallow == False:
             layers = []
             for i in range(5):
                 layers.append(
-                    ConvBlockDepthwise(in_channels=(512*width_multi), out_channels=(512*width_multi), kernel_size=3, stride=1),
+                    ConvBlockDepthwise(in_channels=int(512*width_multi), out_channels=int(512*width_multi), kernel_size=3, stride=1),
                 )
                 layers.append(
-                    ConvBlock(in_channels=(512*width_multi), out_channels=(512*width_multi), kernel_size=1, stride=1, padding=0),
+                    ConvBlock(in_channels=int(512*width_multi), out_channels=int(512*width_multi), kernel_size=1, stride=1, padding=0),
                 )
             self.extra_layers = nn.Sequential(*layers)
 
-        self.conv14 = ConvBlockDepthwise(in_channels=(512*width_multi), out_channels=(512*width_multi), kernel_size=3, stride=2)
-        self.conv15 = ConvBlock(in_channels=(512*width_multi), out_channels=(1024*width_multi), kernel_size=1, stride=1, padding=0)
-        self.conv16 = ConvBlockDepthwise(in_channels=(1024*width_multi), out_channels=(1024*width_multi), kernel_size=3, stride=2)
-        self.conv17 = ConvBlock(in_channels=(1024*width_multi), out_channels=(1024*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv14 = ConvBlockDepthwise(in_channels=int(512*width_multi), out_channels=int(512*width_multi), kernel_size=3, stride=2)
+        self.conv15 = ConvBlock(in_channels=int(512*width_multi), out_channels=int(1024*width_multi), kernel_size=1, stride=1, padding=0)
+        self.conv16 = ConvBlockDepthwise(in_channels=int(1024*width_multi), out_channels=int(1024*width_multi), kernel_size=3, stride=2)
+        self.conv17 = ConvBlock(in_channels=int(1024*width_multi), out_channels=int(1024*width_multi), kernel_size=1, stride=1, padding=0)
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(in_features=int(1024*width_multi), out_features=num_classes)
@@ -104,3 +104,10 @@ class Mobilenet(nn.Module):
 
         print(x.shape)
         return x
+
+def MobileNetV1(img_channels=3, num_classes=1000, width_multiplier=1, shallow=False):
+    width_multipliers = [1, 0.75, 0.5, 0.25]
+    if width_multiplier not in width_multipliers:
+        raise ValueError("width_multiplier is not a value of 1, 0.75, 0.5 or 0.25")
+
+    return Mobilenet(img_channels=img_channels, num_classes=num_classes, width_multi=width_multiplier, shallow=shallow)
