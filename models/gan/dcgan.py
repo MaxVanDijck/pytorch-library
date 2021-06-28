@@ -31,3 +31,30 @@ class DCGanDiscriminator(nn.Module):
 
         x = self.conv2(x)
         return x
+
+class DCGanGenerator(nn.Module):
+    def __init__(self, in_dimensions, img_channels, features):
+        super(DCGanGenerator, self).__init__()
+        self.block1 = self._conv_block(in_dimensions, features*16, 4, 1, 0)
+        self.block2 = self._conv_block(features*16, features*8, 4, 2, 1)
+        self.block3 = self._conv_block(features*8, features*4, 4, 2, 1)
+        self.block4 = self._conv_block(features*4, features*2, 4, 2, 1)
+        self.conv = nn.ConvTranspose2d(features*2, img_channels, kernel_size=4, stride=2, padding=1)
+
+        self.tanh = nn.Tanh()
+
+    def _conv_block(self, in_channels, out_channels, kernel_size, stride, padding):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU()
+        )
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.conv(x)
+        x = self.tanh(x)
+        return x
