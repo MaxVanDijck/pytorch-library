@@ -64,5 +64,17 @@ class GenBlock(nn.Module):
             x = self.transpose(x)
             x = self.norm(x)
             x = self.act(x)
+        return x
 
+class GenResBlock(nn.Module):
+    def __init__(self, channels):
+        super(GenResBlock, self).__init__()
+        self.conv1 = GenBlock(channels, channels, kernel_size=3, padding=1)
+        self.conv2 = GenBlock(channels, channels, use_act=False, kernel_size=3, padding=1)
+
+    def forward(self, x):
+        identity = x
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x + identity
         return x
