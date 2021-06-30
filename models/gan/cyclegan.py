@@ -78,3 +78,54 @@ class GenResBlock(nn.Module):
         x = self.conv2(x)
         x = x + identity
         return x
+
+class CycleGenerator(nn.Module):
+    def __init__(self, img_channels, num_features=64, num_residuals=9):
+        super(CycleGenerator, self).__init__()
+        self.conv1 = nn.Conv2d(img_channels, 
+                               num_features, 
+                               kernel_size=7, 
+                               stride=1, 
+                               padding=3, 
+                               padding_mode='reflect')
+        self.norm = nn.InstanceNorm2d(num_features)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv2 = GenBlock(num_features, num_features*2, kernel_size=3, stride=2, padding=1)
+        self.conv3 = GenBlock(num_features*2, num_features*4, kernel_size=3, stride=2, padding=1)
+
+        res_layers = [GenResBlock(num_features*4) for i in range(num_residuals)]
+        self.res_block = nn.Sequential(*res_layers)
+
+        self.conv4 = GenBlock(num_features*4, 
+                              num_features*2, 
+                              down=False, 
+                              kernel_size=3, 
+                              stride=2, 
+                              padding=1, 
+                              output_padding=1)
+        self.conv5 = GenBlock(num_features*2, 
+                              num_features*1, 
+                              down=False, 
+                              kernel_size=3, 
+                              stride=2, 
+                              padding=1, 
+                              output_padding=1)
+        self.conv6 = nn.Conv2d(num_features*1, 
+                               img_channels, 
+                               kernel_size=7, 
+                               stride=1, 
+                               padding=3,
+                               padding_mode='reflect')
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.norm(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.res_block(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.conv6(x)
+        return x
