@@ -47,3 +47,22 @@ class CycleDiscriminator(nn.Module):
         x = self.leakyrelu(x)
         x = self.model(x)
         return x
+
+class GenBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, down=True, use_act=True, **kwargs):
+        super(GenBlock, self).__init__()
+        self.down = down
+
+        self.conv = nn.Conv2d(in_channels, out_channels, padding_mode='reflect', **kwargs)
+        self.transpose = nn.ConvTranspose2d(in_channels, out_channels, **kwargs)
+        self.norm = nn.InstanceNorm2d(out_channels)
+        self.act = nn.ReLU(inplace=True) if use_act else nn.Identity()
+
+    def forward(self, x):
+        x = self.conv(x)
+        if not self.down:
+            x = self.transpose(x)
+            x = self.norm(x)
+            x = self.act(x)
+
+        return x
