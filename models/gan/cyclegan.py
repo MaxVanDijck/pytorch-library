@@ -36,7 +36,7 @@ class CycleDiscriminator(nn.Module):
         in_channels = features[0]
 
         for feature in features[1:]:
-            layers.append(DiscBlock(in_channels, feature, stride=1 if features==features[-1] else 2))
+            layers.append(DiscBlock(in_channels, feature, stride=1 if feature==features[-1] else 2))
             in_channels = feature
         
         layers.append(nn.Conv2d(in_channels, 1, kernel_size=4, stride=1, padding=1, padding_mode='reflect'))
@@ -51,19 +51,16 @@ class CycleDiscriminator(nn.Module):
 class GenBlock(nn.Module):
     def __init__(self, in_channels, out_channels, down=True, use_act=True, **kwargs):
         super(GenBlock, self).__init__()
-        self.down = down
-
-        self.conv = nn.Conv2d(in_channels, out_channels, padding_mode='reflect', **kwargs)
-        self.transpose = nn.ConvTranspose2d(in_channels, out_channels, **kwargs)
-        self.norm = nn.InstanceNorm2d(out_channels)
-        self.act = nn.ReLU(inplace=True) if use_act else nn.Identity()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, padding_mode="reflect", **kwargs)
+            if down
+            else nn.ConvTranspose2d(in_channels, out_channels, **kwargs),
+            nn.InstanceNorm2d(out_channels),
+            nn.ReLU(inplace=True) if use_act else nn.Identity()
+        )
 
     def forward(self, x):
         x = self.conv(x)
-        if not self.down:
-            x = self.transpose(x)
-            x = self.norm(x)
-            x = self.act(x)
         return x
 
 class GenResBlock(nn.Module):
@@ -129,3 +126,6 @@ class CycleGenerator(nn.Module):
         x = self.conv5(x)
         x = self.conv6(x)
         return x
+
+def CycleGanDiscriminator(in_channels=3): return CycleDiscriminator(in_channels=in_channels)
+def CycleGanGenerator(in_channels=3): return CycleGenerator(img_channels=in_channels)
