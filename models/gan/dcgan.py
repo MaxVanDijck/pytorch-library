@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-class DCGanDiscriminator(nn.Module):
+class DCGandiscriminator(nn.Module):
     def __init__(self, img_channels, features):
-        super(DCGanDiscriminator, self).__init__()
+        super(DCGandiscriminator, self).__init__()
         self.conv1 = nn.Conv2d(img_channels, features, kernel_size=4, stride=2, padding=1)
         
         self.block1 = self._conv_block(features, features*2, 4, 2, 1)
@@ -32,9 +32,9 @@ class DCGanDiscriminator(nn.Module):
         x = self.conv2(x)
         return x
 
-class DCGanGenerator(nn.Module):
+class DCGangenerator(nn.Module):
     def __init__(self, in_dimensions, img_channels, features):
-        super(DCGanGenerator, self).__init__()
+        super(DCGangenerator, self).__init__()
         self.block1 = self._conv_block(in_dimensions, features*16, 4, 1, 0)
         self.block2 = self._conv_block(features*16, features*8, 4, 2, 1)
         self.block3 = self._conv_block(features*8, features*4, 4, 2, 1)
@@ -58,3 +58,6 @@ class DCGanGenerator(nn.Module):
         x = self.conv(x)
         x = self.tanh(x)
         return x
+
+def DCGanDiscriminator(in_channels=3, features=8): return DCGandiscriminator(img_channels=in_channels, features=features)
+def DCGanGenerator(noise_dim = 100, in_channels=3, features=8): return DCGangenerator(in_dimensions=noise_dim, img_channels=in_channels, features=features)
