@@ -1,3 +1,7 @@
+'''EfficientNet model for PyTorch
+[EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks](https://arxiv.org/abs/1905.11946v5)
+'''
+
 import torch
 import torch.nn as nn
 from math import ceil
