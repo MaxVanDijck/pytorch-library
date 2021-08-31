@@ -1,3 +1,7 @@
+'''ResNext model for PyTorch
+[Aggregated Residual Transformations for Deep Neural Networks](https://arxiv.org/abs/1611.05431v2)
+'''
+
 import torch
 import torch.nn as nn
 
