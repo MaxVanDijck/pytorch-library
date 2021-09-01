@@ -1,3 +1,7 @@
+'''CycleGAN model for PyTorch
+[Unpaired Image-to-Image Translation using Cycle-Consistent Adversarial Networks](https://arxiv.org/abs/1703.10593v7)
+'''
+
 import torch
 import torch.nn as nn
 

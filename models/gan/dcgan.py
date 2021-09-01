@@ -1,3 +1,7 @@
+'''DCGAN model for PyTorch
+[Unsupervised Representation Learning with Deep Convolutional Generative Adversarial Networks](https://arxiv.org/abs/1511.06434v2)
+'''
+
 import torch
 import torch.nn as nn
 
