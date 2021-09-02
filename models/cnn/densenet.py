@@ -107,7 +107,15 @@ class DenseNet(nn.Module):
         x = x.view(x.shape[0], -1)
         x = self.fc1(x)
         return x
-        
-model = DenseNet()
-x = model(torch.randn(1, 3, 224, 224)).to('cuda')
-print(x.size())
+
+base_models = {
+    "121": (32, (6, 12, 24, 16), 64),
+    "161": (48, (6, 12, 36, 24), 96),
+    "169": (32, (6, 12, 32, 32), 64),
+    "201": (32, (6, 12, 48, 32), 64)
+}
+
+def DenseNet121(num_classes=1000): return DenseNet(*base_models["121"], num_classes=num_classes)
+def DenseNet161(num_classes=1000): return DenseNet(*base_models["161"], num_classes=num_classes)
+def DenseNet169(num_classes=1000): return DenseNet(*base_models["169"], num_classes=num_classes)
+def DenseNet201(num_classes=1000): return DenseNet(*base_models["201"], num_classes=num_classes)
