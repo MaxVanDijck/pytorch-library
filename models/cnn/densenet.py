@@ -39,3 +39,28 @@ class DenseLayer(nn.Module):
         x = self.dropout(x)
 
         return x
+
+class DenseBlock(nn.Module):
+    def __init__(self, 
+    num_layers, 
+    in_channels, 
+    bn_size, 
+    growth_rate, 
+    drop_rate, 
+    memory_efficient=False):
+        super(DenseBlock, self).__init__()
+        features = []
+        for i in range(num_layers):
+            features.append(
+                DenseLayer(in_channels + i * growth_rate,
+                growth_rate=growth_rate,
+                bn_size=bn_size,
+                drop_rate=drop_rate,
+                memory_efficient=memory_efficient)
+            )
+
+        self.features = nn.Sequential(*features)
+
+    def forward(self, x):
+        x = self.features(x)
+        return x
