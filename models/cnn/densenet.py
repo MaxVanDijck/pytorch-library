@@ -1,3 +1,7 @@
+'''DenseNet model for PyTorch
+[Densely Connected Convolutional Networks](https://arxiv.org/abs/1608.06993v5)
+'''
+
 import torch
 import torch.nn as nn
 
