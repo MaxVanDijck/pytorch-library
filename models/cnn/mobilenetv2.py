@@ -30,6 +30,8 @@ class ConvLayer(nn.Module):
         )
         if norm_layer is None:
             layers.append(nn.BatchNorm2d(out_channels))
+        else:
+            layers.append(norm_layer(out_channels))
 
         layers.append(nn.ReLU6(inplace=True))
         self.features = nn.Sequential(*layers)
@@ -53,6 +55,11 @@ class InvertedResidualBlock(nn.Module):
         layers.append(ConvLayer(hidden_dim, hidden_dim, stride=stride, groups=hidden_dim, norm_layer=norm_layer))
         layers.append(nn.Conv2d(hidden_dim, out_channels, 1, 1, 0, bias=False))
 
+        if norm_layer is None:
+            layers.append(nn.BatchNorm2d(out_channels))
+        else:
+            layers.append(norm_layer(out_channels))
+
         self.features = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -60,3 +67,13 @@ class InvertedResidualBlock(nn.Module):
             return x + self.features(x)
         else:
             return self.features(x)
+
+class MobileNetV2(nn.Module):
+    def __init__(self, 
+                 num_classes=1000, 
+                 width_multi=1.0, 
+                 inverted_residual_setting=None, 
+                 round_nearest=8, 
+                 block=None, 
+                 norm_layer=None):
+        super(MobileNetV2, self).__init__()
