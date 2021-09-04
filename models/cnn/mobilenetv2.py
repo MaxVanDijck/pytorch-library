@@ -16,6 +16,7 @@ class ConvLayer(nn.Module):
                 stride=1, 
                 groups=1, 
                 norm_layer=None):
+        super(ConvLayer, self).__init__()
         padding = (kernel_size-1) // 2
         layers = []
         layers.append(
@@ -31,11 +32,31 @@ class ConvLayer(nn.Module):
             layers.append(nn.BatchNorm2d(out_channels))
 
         layers.append(nn.ReLU6(inplace=True))
-
         self.features = nn.Sequential(*layers)
 
     def forward(self, x):
         x = self.features(x)
         return x
-            
 
+class InvertedResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride, expand_ratio, norm_layer=None):
+        super(InvertedResidualBlock, self)
+        self.stride = stride
+        assert stride in [1, 2], "Stride not equal to 1 or 2"
+
+        hidden_dim = int(round(in_channels * expand_ratio))
+        self.use_residual = self.stride == 1 and in_channels == out_channels
+
+        layers = []
+        if expand_ratio != 1:
+            layers.append(ConvLayer(in_channels, hidden_dim, kernel_size=1, norm_layer=norm_layer))
+        layers.append(ConvLayer(hidden_dim, hidden_dim, stride=stride, groups=hidden_dim, norm_layer=norm_layer))
+        layers.append(nn.Conv2d(hidden_dim, out_channels, 1, 1, 0, bias=False))
+
+        self.features = nn.Sequential(*layers)
+
+    def forward(self, x):
+        if self.use_residual:
+            return x + self.features(x)
+        else:
+            return self.features(x)
