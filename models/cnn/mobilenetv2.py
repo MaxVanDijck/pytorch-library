@@ -23,6 +23,7 @@ class ConvLayer(nn.Module):
                     out_channels=out_channels, 
                     kernel_size=kernel_size, 
                     stride=stride, 
+                    padding=padding,
                     groups=groups, 
                     bias=False)
         )
