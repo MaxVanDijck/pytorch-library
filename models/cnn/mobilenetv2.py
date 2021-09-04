@@ -40,7 +40,7 @@ class ConvLayer(nn.Module):
 
 class InvertedResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride, expand_ratio, norm_layer=None):
-        super(InvertedResidualBlock, self)
+        super(InvertedResidualBlock, self).__init__()
         self.stride = stride
         assert stride in [1, 2], "Stride not equal to 1 or 2"
 
