@@ -1,3 +1,7 @@
+'''MobileNetV2 model for PyTorch
+[MobileNetV2: Inverted Residuals and Linear Bottlenecks](https://arxiv.org/abs/1801.04381v4)
+'''
+
 import torch
 import torch.nn as nn
 
