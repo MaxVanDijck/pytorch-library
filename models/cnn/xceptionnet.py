@@ -4,12 +4,7 @@ import torch.nn as nn
 class DoubleSeperableBlock(nn.Module):
     def __init__(self, channels):
         super(DoubleSeperableBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=channels, 
-                               out_channels=channels, 
-                               kernel_size=3, 
-                               groups=channels, 
-                               bias=False)
-        self.conv2 = nn.Conv2d(in_channels=channels, 
+        self.conv = nn.Conv2d(in_channels=channels, 
                                out_channels=channels, 
                                kernel_size=3, 
                                groups=channels, 
@@ -25,9 +20,9 @@ class DoubleSeperableBlock(nn.Module):
 
     def forward(self, x):
         identity = self.residualConv(x)
-        x = self.conv1(x)
+        x = self.conv(x)
         x = self.relu(x)
-        x = self.conv2(x)
+        x = self.conv(x)
         x = self.pool(x)
 
         x += identity
