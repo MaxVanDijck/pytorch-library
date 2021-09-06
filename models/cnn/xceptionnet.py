@@ -132,6 +132,5 @@ class Xceptionnet(nn.Module):
         x = self.relu(x)
         return x
 
-model = Xceptionnet()
-x = model(torch.randn(1, 3, 299, 299))
-print(x.size())
+def XceptionNet(num_classes=1000, img_channels=3): 
+    return Xceptionnet(num_classes=num_classes, img_channels=img_channels)
