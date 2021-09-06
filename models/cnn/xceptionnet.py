@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-class SeperableBlock(nn.Module):
+class DoubleSeperableBlock(nn.Module):
     def __init__(self, channels):
-        super(SeperableBlock, self).__init__()
+        super(DoubleSeperableBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels=channels, 
                                out_channels=channels, 
                                kernel_size=3, 
