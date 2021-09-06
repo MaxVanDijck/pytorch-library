@@ -1,3 +1,7 @@
+'''XceptionNet model for PyTorch
+[Xception: Deep Learning with Depthwise Separable Convolutions](https://arxiv.org/abs/1610.02357)
+'''
+
 import torch
 import torch.nn as nn
 
