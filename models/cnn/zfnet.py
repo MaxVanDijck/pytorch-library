@@ -1,4 +1,4 @@
-'''VGGNet model for PyTorch
+'''ZFNet model for PyTorch
 [Visualizing and Understanding Convolutional Networks](https://arxiv.org/abs/1311.2901v3)
 '''
 
