@@ -4,11 +4,11 @@ import torch.nn as nn
 def _make_divisible(value, divisor, min_value=None):
     if min_value is None:
         min_value = divisor
-    new_v = max(min_value, int(v + divisor/2) // divisor * divisor)
+    new_value = max(min_value, int(v + divisor/2) // divisor * divisor)
     
-    if new_v < 0.9 * v:
-        new_v += divisor
-    return new_v
+    if new_value < 0.9 * value:
+        new_value += divisor
+    return new_value
 
 class SELayer(nn.Module):
     def __init__(self, inp, oup, reduction=4):
