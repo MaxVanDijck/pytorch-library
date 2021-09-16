@@ -28,3 +28,38 @@ class SELayer(nn.Module):
         y = self.fc2(y)
         y = self.sigmoid(y).view(b, c, 1, 1)
         return x * y
+
+class MBConv(nn.Module):
+    def __init__(self, inp, oup, stride, expand_ratio, use_se):
+        super(MBConv, self).__init__()
+        assert stride in [1, 2]
+
+        hidden_dim = round(inp * expand_ratio)
+        self.identity = stride == 1 and inp == oup
+
+        if use_se:
+            self.conv = nn.Sequential(
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.SiLU(),
+                nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.SiLU(),
+                SELayer(inp, hidden_dim),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup)
+            )
+        else:
+            self.conv = nn.Sequential(
+                nn.Conv2d(inp, hidden_dim, 3, stride, 1, bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.SiLU(),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup)
+            )
+
+    def forward(self, x):
+        if self.identity:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
