@@ -1,3 +1,7 @@
+'''EfficientNetV2 model for PyTorch
+[EfficientNetV2: Smaller Models and Faster Training](https://arxiv.org/abs/2104.00298v3)
+'''
+
 import torch
 import torch.nn as nn
 import math
@@ -172,7 +176,3 @@ def EfficientNetV2L(in_channels = 3, num_classes=1000, **kwargs):
     return Efficientnetv2(cfgs = configs['l'], in_channels=in_channels, num_classes=num_classes, **kwargs)
 def EfficientNetV2XL(in_channels = 3, num_classes=1000, **kwargs):
     return Efficientnetv2(cfgs = configs['xl'], in_channels=in_channels, num_classes=num_classes, **kwargs)
-
-model = EfficientNetV2L()
-x = model(torch.randn(1, 3, 400, 400))
-print(x.size())
