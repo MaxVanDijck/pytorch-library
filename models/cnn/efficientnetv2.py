@@ -123,3 +123,55 @@ class Efficientnetv2(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.weight.data.normal_(0, 0.001)
                 m.bias.data.zero_()
+
+configs = {
+        # t, c, n, s, SE
+    's' : [
+        [1,  24,  2, 1, 0],
+        [4,  48,  4, 2, 0],
+        [4,  64,  4, 2, 0],
+        [4, 128,  6, 2, 1],
+        [6, 160,  9, 1, 1],
+        [6, 256, 15, 2, 1],
+    ],
+    'm' : [
+        [1,  24,  3, 1, 0],
+        [4,  48,  5, 2, 0],
+        [4,  80,  5, 2, 0],
+        [4, 160,  7, 2, 1],
+        [6, 176, 14, 1, 1],
+        [6, 304, 18, 2, 1],
+        [6, 512,  5, 1, 1],
+    ],
+    'l' : [
+        [1,  32,  4, 1, 0],
+        [4,  64,  7, 2, 0],
+        [4,  96,  7, 2, 0],
+        [4, 192, 10, 2, 1],
+        [6, 224, 19, 1, 1],
+        [6, 384, 25, 2, 1],
+        [6, 640,  7, 1, 1],
+    ],
+    'xl' : [
+        [1,  32,  4, 1, 0],
+        [4,  64,  8, 2, 0],
+        [4,  96,  8, 2, 0],
+        [4, 192, 16, 2, 1],
+        [6, 256, 24, 1, 1],
+        [6, 512, 32, 2, 1],
+        [6, 640,  8, 1, 1],
+    ]
+}
+
+def EfficientNetV2S(in_channels = 3, num_classes=1000, **kwargs):
+    return Efficientnetv2(cfgs = configs['s'], in_channels=in_channels, num_classes=num_classes, **kwargs)
+def EfficientNetV2M(in_channels = 3, num_classes=1000, **kwargs):
+    return Efficientnetv2(cfgs = configs['m'], in_channels=in_channels, num_classes=num_classes, **kwargs)
+def EfficientNetV2L(in_channels = 3, num_classes=1000, **kwargs):
+    return Efficientnetv2(cfgs = configs['l'], in_channels=in_channels, num_classes=num_classes, **kwargs)
+def EfficientNetV2XL(in_channels = 3, num_classes=1000, **kwargs):
+    return Efficientnetv2(cfgs = configs['xl'], in_channels=in_channels, num_classes=num_classes, **kwargs)
+
+model = EfficientNetV2L()
+x = model(torch.randn(1, 3, 244, 244))
+print(x.size())
