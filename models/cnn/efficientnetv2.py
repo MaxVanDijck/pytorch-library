@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 
 def _make_divisible(value, divisor, min_value=None):
     if min_value is None:
@@ -173,5 +174,5 @@ def EfficientNetV2XL(in_channels = 3, num_classes=1000, **kwargs):
     return Efficientnetv2(cfgs = configs['xl'], in_channels=in_channels, num_classes=num_classes, **kwargs)
 
 model = EfficientNetV2L()
-x = model(torch.randn(1, 3, 244, 244))
+x = model(torch.randn(1, 3, 400, 400))
 print(x.size())
