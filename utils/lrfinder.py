@@ -65,4 +65,4 @@ def LRFinder(model, loss_func, optimizer, dataloader, lr_range=(1e-6, 1), num_it
     plt.text(recommended_lr, recommended_lr_yval, 'Recommended LR')
 
     #Print Info
-    print('Min Loss: {:.4f}, LR at Min: {:.4e}, Recommended LR: {:.4e}'.format(losses[min_index], lrs[min_index], recommended_lr))
+    print('Min Loss: {:.4f}, LR at Min: {:.4e}, Recommended LR: {:.4e}'.format(losses[min_index], learning_rates[min_index], recommended_lr))
