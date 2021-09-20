@@ -9,40 +9,43 @@ class Alexnet(nn.Module):
     def __init__(self, img_channels, num_classes, dropout=0.5):
         super(Alexnet, self).__init__()
         self.conv1 = nn.Conv2d(img_channels, 
-                               out_channels=96, 
+                               out_channels=64, 
                                kernel_size=11,
-                               stride=4)      
-        self.norm1 = nn.LocalResponseNorm(96)
+                               stride=4,
+                               padding=2)      
+        self.norm1 = nn.LocalResponseNorm(64)
 
-        self.conv2 = nn.Conv2d(in_channels=96,
-                               out_channels=256,
+        self.conv2 = nn.Conv2d(in_channels=64,
+                               out_channels=192,
                                kernel_size=5,
-                               stride=1)
-        self.norm2 = nn.LocalResponseNorm(256)
+                               stride=1,
+                               padding=2)
+        self.norm2 = nn.LocalResponseNorm(192)
 
-        self.conv3 = nn.Conv2d(in_channels=256,
+        self.conv3 = nn.Conv2d(in_channels=192,
                                out_channels=384,
                                kernel_size=3,
                                stride=1)
 
         self.conv4 = nn.Conv2d(in_channels=384,
-                               out_channels=384,
+                               out_channels=256,
                                kernel_size=3,
                                stride=1)
         
-        self.conv5 = nn.Conv2d(in_channels=384,
+        self.conv5 = nn.Conv2d(in_channels=256,
                                out_channels=256,
                                kernel_size=3,
                                stride=1)
         self.norm3 = nn.LocalResponseNorm(256)
 
-        self.fc1 = nn.Linear(256, 4096)
+        self.fc1 = nn.Linear(256 * 6 * 6, 4096)
         self.fc2 = nn.Linear(4096, 4096)
         self.fc3 = nn.Linear(4096, num_classes)
 
         self.dropout = nn.Dropout(p=dropout)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2)
         self.relu = nn.ReLU()
+
 
     def forward(self, x):
         x = self.conv1(x)
