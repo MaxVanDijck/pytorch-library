@@ -36,8 +36,8 @@ class Vggnet(nn.Module):
         self.version = version
         self.conv_layers = self.create_architecture()
 
-        self.pool = nn.AdaptiveAvgPool2d(1)
-        self.fc1 = nn.Linear(512, 4096)
+        self.pool = nn.AdaptiveAvgPool2d(7)
+        self.fc1 = nn.Linear(25088, 4096)
         self.fc2 = nn.Linear(4096, 4096)
         self.fc3 = nn.Linear(4096, num_classes)
 
