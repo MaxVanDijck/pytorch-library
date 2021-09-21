@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def LRFinder(model, loss_func, optimizer, dataloader, lr_range=(1e-6, 1), num_iter=1000, repeat=1, device='cpu'):
+def LRFinder(model, loss_func, optimizer, dataloader, lr_range=(1e-6, 1), num_iter=50, repeat=1, device='cpu'):
     #Logging
     losses = []
     learning_rates = []
