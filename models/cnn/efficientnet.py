@@ -68,7 +68,7 @@ class InvertedResidualBlock(nn.Module):
         reduced_dim = int(in_channels / reduction)
 
         if self.expand: 
-            self.expand_conv = CNNBlock(in_channels, hidden_dim, kernel_size=3, stride=1, padding=1)
+            self.expand_conv = CNNBlock(in_channels, hidden_dim, kernel_size=1, stride=1, padding=0)
 
         self.conv = nn.Sequential(
             CNNBlock(hidden_dim, hidden_dim, kernel_size, stride, padding, groups=hidden_dim),
@@ -105,10 +105,8 @@ class EfficientNet(nn.Module):
             nn.Linear(last_channels, num_classes),
         )
 
-    def calculate_factors(self, version, alpha=1.2, beta=1.2):
-        phi, res, drop_rate = phi_values[version]
-        depth_factor = alpha ** phi
-        width_factor = beta ** phi
+    def calculate_factors(self, version):
+        depth_factor, width_factor, phi, res, drop_rate = phi_values[version]
         return width_factor, depth_factor, drop_rate
 
     def create_features(self, width_factor, depth_factor, last_channels):
@@ -117,7 +115,7 @@ class EfficientNet(nn.Module):
         in_channels = channels
 
         for expand_ratio, channels, repeats, stride, kernel_size in base_model:
-            out_channels = 4*ceil(int(channels*width_factor) / 4)
+            out_channels = 4 * ceil(int(channels*width_factor) / 4)
             layers_repeats = ceil(repeats * depth_factor)
 
             for layer in range(layers_repeats):
@@ -126,7 +124,7 @@ class EfficientNet(nn.Module):
                         in_channels,
                         out_channels,
                         expand_ratio=expand_ratio,
-                        stride= stride if layer == 0 else 1,
+                        stride = stride if layer == 0 else 1,
                         kernel_size=kernel_size,
                         padding=kernel_size//2
                     )
@@ -156,15 +154,15 @@ base_model = [
 ]
 
 phi_values = {
-    # tuple of: (phi_value, resolution, drop_rate)
-    "b0": (0, 224, 0.2),  # alpha, beta, gamma, depth = alpha ** phi
-    "b1": (0.5, 240, 0.2),
-    "b2": (1, 260, 0.3),
-    "b3": (2, 300, 0.3),
-    "b4": (3, 380, 0.4),
-    "b5": (4, 456, 0.4),
-    "b6": (5, 528, 0.5),
-    "b7": (6, 600, 0.5),
+    # tuple of: (depth, width, phi_value, resolution, drop_rate)
+    "b0": (1, 1, 0, 224, 0.2),
+    "b1": (1.1, 1.0, 0.5, 240, 0.2),
+    "b2": (1.2, 1.1, 2, 260, 0.3),
+    "b3": (1.4, 1.2, 2, 300, 0.3),
+    "b4": (1.8, 1.4, 3, 380, 0.4),
+    "b5": (2.2, 1.6, 4, 456, 0.4),
+    "b6": (2.6, 1.8, 5, 528, 0.5),
+    "b7": (3.1, 2.0, 6, 600, 0.5),
 }
 
 def EfficientNetB0(num_classes=1000): return EfficientNet(version='b0', num_classes=num_classes)
