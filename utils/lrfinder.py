@@ -44,8 +44,14 @@ def LRFinder(model, loss_func, optimizer, dataloader, lr_range=(1e-6, 1), num_it
         if i == 0:
             first_loss = loss.item()
         #If loss is starting to explode, break loop
-        if loss.item() > first_loss:
+        if loss.item() > first_loss * 2:
             break
+
+    #Remove 10% of final values
+    end_index = int(len(losses) * 0.9)
+    losses = losses[0:end_index]
+    learning_rates = learning_rates[0:end_index]
+        
     #Find Local Minima
     min_value = min(losses)
     min_index = losses.index(min_value)
