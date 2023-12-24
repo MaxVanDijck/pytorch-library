@@ -12,6 +12,7 @@ transformers = "*"
 deepspeed = "*"
 py-cpuinfo = "*"
 timm = "*"
+evaluate = "*"
 
 [dev-packages]
 

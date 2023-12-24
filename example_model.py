@@ -29,9 +29,9 @@ class Model(PreTrainedModel):
         )
 
     def forward(self, tensor, labels=None):
-        logits = self.model(tensor)
+        logits = self.model(tensor.to(self.device))
         if labels is not None:
-            loss = torch.nn.functional.cross_entropy(logits, labels)
+            loss = torch.nn.functional.cross_entropy(logits, labels.to(self.device))
             return {"loss": loss, "logits": logits}
         return {"logits": logits}
 
