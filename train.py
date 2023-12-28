@@ -43,7 +43,7 @@ def get_model():
 
 def get_ray_dataset():
     hf_dataset = datasets.load_dataset("zh-plus/tiny-imagenet")
-    ray_ds = ray.data.from_huggingface(hf_dataset["train"])
+    ray_ds = ray.data.from_huggingface(hf_dataset["train"]).random_shuffle()
     return ray_ds
 
 def train_func(config):

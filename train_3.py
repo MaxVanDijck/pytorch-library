@@ -223,8 +223,6 @@ def training_function(kwargs: dict):
 
             aggregated_loss = torch.mean(accelerator.gather(loss[None])).item()
 
-            # if config["as_test"]:
-            #     break
 
             # as long as this is not the last step report here
             if step != (train_ds_len // batch_size - 1):
@@ -247,6 +245,9 @@ def training_function(kwargs: dict):
                     }
                 )
 
+            if config["as_test"]:
+                break
+
         e_epoch = time.time()
         accelerator.print("Train time per epoch: ", e_epoch - s_epoch)
 
@@ -258,7 +259,7 @@ def training_function(kwargs: dict):
             accelerator=accelerator,
             bsize=32,
             ds_kwargs={"collate_fn": collate_fn},
-            as_test=False,
+            as_test=config["as_test"],
         )
         accelerator.print("Eval result loss", eloss)
         accelerator.print("Eval perplex", perplex)
@@ -360,6 +361,7 @@ def training_function(kwargs: dict):
 
 def main():
     config = {
+        "as_test": True,
         "lr": 1e-2,
         "num_epochs": 10,
         "seed": 42,
