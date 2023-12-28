@@ -178,7 +178,7 @@ def training_function(kwargs: dict):
         print("Number of batches on main process", train_ds_len // batch_size)
 
     for epoch in range(num_epochs):
-        fwd_time_sum, bwd_time_sum, optim_step_time_sum = 0, 0, 0
+        fwd_time_sum, bwd_time_sum, optim_step_time_sum, load_batch_time_sum = 0, 0, 0, 0
         s_epoch = time.time()
         model.train()
         loss_sum = torch.tensor(0.0).to(accelerator.device)
@@ -194,7 +194,11 @@ def training_function(kwargs: dict):
 
             # We could avoid this line since we set the accelerator with
             # `device_placement=True`.
+            s_load_batch = time.time()
             with accelerator.accumulate(model):
+                e_load_batch = time.time()
+                load_batch_time = e_load_batch - s_load_batch
+                load_batch_time_sum += load_batch_time
                 s_fwd = time.time()
                 outputs = model(*batch)
                 loss = outputs["loss"]
@@ -214,6 +218,8 @@ def training_function(kwargs: dict):
                 optimizer.zero_grad()
                 e_opt_step = time.time()
                 optim_step_time_sum += e_opt_step - s_opt_step
+                s_load_batch = time.time()
+
 
             if accelerator.is_main_process:
                 accelerator.print(
@@ -245,7 +251,7 @@ def training_function(kwargs: dict):
                     }
                 )
 
-            if config["as_test"]:
+            if config["as_test"] and step >= 5:
                 break
 
         e_epoch = time.time()
@@ -268,6 +274,7 @@ def training_function(kwargs: dict):
         accelerator.print("Eval time per epoch: ", eval_e_epoch - eval_s_epoch)
         accelerator.print("avg fwd time: ", fwd_time_sum / (step + 1))
         accelerator.print("avg bwd time: ", bwd_time_sum / (step + 1))
+        accelerator.print("avg batch time: ", load_batch_time_sum / (step + 1))
         accelerator.print("avg opt step time: ", optim_step_time_sum / (step + 1))
 
         metrics = {
