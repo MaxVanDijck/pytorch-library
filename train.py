@@ -1,4 +1,8 @@
 import argparse
+
+from evaluate import load
+import torch.nn.functional as F
+
 from example_model import Config, Model
 from filelock import FileLock
 import functools
@@ -25,6 +29,8 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     get_linear_schedule_with_warmup,
+    get_polynomial_decay_schedule_with_warmup,
+    get_cosine_schedule_with_warmup
 )
 
 import ray
@@ -41,15 +47,15 @@ import datasets
 
 
 OPTIM_BETAS = (0.9, 0.999)
-OPTIM_EPS = 1e-8
+OPTIM_EPS = 1e-6
 NUM_WARMUP_STEPS = 10
 OPTIM_WEIGHT_DECAY = 0.0
 ATTENTION_LAYER_NAME = "self_attn"
 
 
-def get_ray_dataset():
-    hf_dataset = datasets.load_dataset("zh-plus/tiny-imagenet")
-    ray_ds = ray.data.from_huggingface(hf_dataset["train"]).random_shuffle()
+def get_ray_dataset(split):
+    hf_dataset = datasets.load_dataset("frgfm/imagenette", '320px')
+    ray_ds = ray.data.from_huggingface(hf_dataset[split]).random_shuffle()
     return ray_ds
 
 def collate_fn(batch):
@@ -57,15 +63,43 @@ def collate_fn(batch):
         mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225]
     )
+    resize = transforms.Resize(128)
+    crop = transforms.CenterCrop(128)
+    erasing = transforms.RandomErasing(p=0.1, scale=(0.02, 0.33))
     x = []
     for item in batch['image']:
         image = pil_to_tensor(Image.open(io.BytesIO(item['bytes'])))
         if image.shape[0] == 1:
             image = image.repeat(3, 1, 1)
+        image = resize(image)
+
+        image = crop(image).to(torch.float32)
+        image = normalize(image)
+        image = erasing(image)
         x.append(image)
     x = torch.stack(x).to(torch.float32)
     y = torch.tensor(batch['label'], dtype=torch.uint8)
-    x = normalize(x)
+    return x, y
+
+
+def collate_fn_eval(batch):
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+    resize = transforms.Resize(128)
+    crop = transforms.CenterCrop(128)
+    x = []
+    for item in batch['image']:
+        image = pil_to_tensor(Image.open(io.BytesIO(item['bytes'])))
+        if image.shape[0] == 1:
+            image = image.repeat(3, 1, 1)
+        image = resize(image)
+        image = crop(image).to(torch.float32)
+        image = normalize(image)
+        x.append(image)
+    x = torch.stack(x).to(torch.float32)
+    y = torch.tensor(batch['label'], dtype=torch.uint8)
     return x, y
 
 def evaluate(
@@ -73,6 +107,8 @@ def evaluate(
 ) -> Tuple[float, float]:
     model.eval()
     losses = []
+    labels = []
+    logits = []
 
     eval_dataloader = eval_ds.iter_torch_batches(batch_size=bsize, **ds_kwargs)
     eval_ds_len = len(list(eval_ds.iter_batches(batch_size=1)))
@@ -83,10 +119,14 @@ def evaluate(
             outputs = model(*batch)
 
         loss = outputs["loss"]
+        logits_out = F.softmax(outputs["logits"], dim=-1).argmax(1).tolist()
+
         # The tensors are gathered by concatenating them on the first dimension, so we
         # add a new dimension to the scalar loss to get a tensor of shape (K,) for K
         # workers.
         losses.append(accelerator.gather(loss[None]))
+        labels += batch[1].tolist()
+        logits += logits_out
 
         if as_test:
             break
@@ -97,9 +137,13 @@ def evaluate(
     try:
         eval_loss = torch.mean(losses).item()
         perplexity = math.exp(eval_loss)
+        precision_metric = load("precision")
+        precision = precision_metric.compute(references=labels, predictions=logits, average='micro')
+        accuracy_metric = load("accuracy")
+        accuracy = accuracy_metric.compute(references=labels, predictions=logits)
     except OverflowError:
         perplexity = float("inf")
-    return perplexity, eval_loss
+    return perplexity, eval_loss, precision, accuracy
 
 
 
@@ -110,8 +154,8 @@ def training_function(config: dict):
     # properly on multi-gpu nodes
     cuda_visible_device = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
     local_rank = int(os.environ["LOCAL_RANK"])
-    device_id = cuda_visible_device[local_rank]
-    os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
+    # device_id = cuda_visible_device[local_rank]
+    # os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
     os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: comment out, need this for local training
 
 
@@ -159,8 +203,13 @@ def training_function(config: dict):
         model.parameters(),
         lr=lr,
         betas=OPTIM_BETAS,
-        weight_decay=0.01,
         eps=OPTIM_EPS,
+    )
+    
+    from ranger import Ranger
+    optimizer = Ranger(
+        model.parameters(),
+        lr=lr,
     )
 
     # Instantiate scheduler
@@ -168,19 +217,19 @@ def training_function(config: dict):
     # else, creates `args.lr_scheduler_type` Scheduler
     # get train and valid dataset lengths
 
-    num_steps_per_epoch = 1000
+    num_steps_per_epoch = 295
     total_training_steps = (
-        num_steps_per_epoch * num_epochs // gradient_accumulation_steps
+        num_steps_per_epoch * 1 // gradient_accumulation_steps
     )
 
     if (
         accelerator.state.deepspeed_plugin is None
         or "scheduler" not in accelerator.state.deepspeed_plugin.deepspeed_config
     ):
-        lr_scheduler = get_linear_schedule_with_warmup(
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer=optimizer,
-            num_warmup_steps=NUM_WARMUP_STEPS * 1,
-            num_training_steps=total_training_steps * 1,
+            step_size=total_training_steps,
+            gamma=0.5,
         )
     else:
         lr_scheduler = DummyScheduler(
@@ -249,6 +298,7 @@ def training_function(config: dict):
                 accelerator.print(
                     f"[epoch {epoch} step {step}] "
                     f"loss: {loss.item()} step-time: {e_opt_step - s_fwd}"
+                    f"Learning rate: {lr_scheduler.get_lr()[0]}"
                 )
 
             aggregated_loss = torch.mean(accelerator.gather(loss[None])).item()
@@ -283,12 +333,12 @@ def training_function(config: dict):
 
         eval_s_epoch = time.time()
         print("Running evaluation ...")
-        perplex, eloss = evaluate(
+        perplex, eloss, precision, accuracy = evaluate(
             model=model,
             eval_ds=valid_ds,
             accelerator=accelerator,
             bsize=32,
-            ds_kwargs={"collate_fn": collate_fn},
+            ds_kwargs={"collate_fn": collate_fn_eval},
             as_test=config["as_test"],
         )
         accelerator.print("Eval result loss", eloss)
@@ -316,6 +366,8 @@ def training_function(config: dict):
             "avg_fwd_time_per_epoch": fwd_time_sum / (step + 1),
             "avg_bwd_time_per_epoch": bwd_time_sum / (step + 1),
             "learning_rate": lr_scheduler.get_lr()[0],
+            "precision": precision,
+            "accuracy": accuracy,
         }
 
         with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
@@ -392,9 +444,9 @@ def training_function(config: dict):
 
 def main():
     config = {
-        "as_test": True,
+        "as_test": False,
         "lr": 1e-2,
-        "num_epochs": 10,
+        "num_epochs": 5,
         "seed": 42,
         "batch_size": 32,
         "gradient_accumulation_steps": 1,
@@ -418,7 +470,7 @@ def main():
     )
 
     # Read data
-    datasets = {"train": get_ray_dataset(), "valid": get_ray_dataset()}
+    datasets = {"train": get_ray_dataset('train'), "valid": get_ray_dataset('validation')}
 
     trainer = TorchTrainer(
         training_function,

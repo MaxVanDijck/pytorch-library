@@ -37,6 +37,7 @@ class Alexnet(nn.Module):
                                kernel_size=3,
                                stride=1)
         self.norm3 = nn.LocalResponseNorm(256)
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
 
         self.fc1 = nn.Linear(256 * 6 * 6, 4096)
         self.fc2 = nn.Linear(4096, 4096)
@@ -64,6 +65,7 @@ class Alexnet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
         x = self.norm3(x)
+        x = self.avgpool(x)
         x = x.reshape(x.shape[0], -1)
         x = self.fc1(x)
         x = self.relu(x)
@@ -75,3 +77,7 @@ class Alexnet(nn.Module):
         return(x)
 
 def AlexNet(img_channels=3, num_classes=1000, dropout=0.5): return Alexnet(img_channels=img_channels, num_classes=num_classes, dropout=dropout)
+
+if __name__ == "__main__":
+    model = AlexNet(3, 200)
+    model(torch.randn(32, 3, 227, 227))
