@@ -1,10 +1,9 @@
 from transformers import PreTrainedModel, PretrainedConfig
 import torch
 from timm.models.resnet import BasicBlock, Bottleneck, ResNet
-import pytorch_lightning as pl
 import transformers
 
-from deepspeed.ops.adam import DeepSpeedCPUAdam
+# from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 
 

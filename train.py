@@ -1,4 +1,5 @@
 import argparse
+import hydra
 
 from evaluate import load
 import torch.nn.functional as F
@@ -16,7 +17,7 @@ import time
 import tree
 from typing import Tuple
 
-import deepspeed  # noqa: F401
+# import deepspeed  # noqa: F401
 
 from accelerate import Accelerator, DeepSpeedPlugin
 from accelerate.utils import DummyOptim, DummyScheduler, set_seed
@@ -442,18 +443,8 @@ def training_function(config: dict):
 
 
 
-def main():
-    config = {
-        "as_test": False,
-        "lr": 1e-2,
-        "num_epochs": 5,
-        "seed": 42,
-        "batch_size": 32,
-        "gradient_accumulation_steps": 1,
-        "use_deepseed": False,
-        "mixed_precision": 'no',
-    }
-
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(config):
     # Add deepspeed plugin to the config
     if config["use_deepseed"]:
         ds_plugin = DeepSpeedPlugin(hf_ds_config=config.get("deepspeed/ds_config_zero0.json"))

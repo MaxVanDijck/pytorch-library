@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 ray = {extras = ["all"], version = "*"}
+hydra-core = "*"
 torch = "*"
 datasets = "*"
 accelerate = "*"
@@ -13,6 +14,7 @@ deepspeed = "*"
 py-cpuinfo = "*"
 timm = "*"
 evaluate = "*"
+pandas = "<2.2" # ray is currently broken
 
 [dev-packages]
 
