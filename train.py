@@ -1,5 +1,6 @@
 import argparse
 import hydra
+from omegaconf import OmegaConf
 
 from evaluate import load
 import torch.nn.functional as F
@@ -445,10 +446,13 @@ def training_function(config: dict):
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(config):
+    config = OmegaConf.to_container(config)
     # Add deepspeed plugin to the config
     if config["use_deepseed"]:
-        ds_plugin = DeepSpeedPlugin(hf_ds_config=config.get("deepspeed/ds_config_zero0.json"))
+        ds_plugin = DeepSpeedPlugin(hf_ds_config="deepspeed/ds_config_zero0.json")
         config.update(ds_plugin=ds_plugin)
+
+    breakpoint()
 
 
     runtime_envvars = dict(os.environ)
