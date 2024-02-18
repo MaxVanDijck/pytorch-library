@@ -1,0 +1,8 @@
+as_test: False
+lr: 0.01
+num_epochs: 5
+seed: 42
+batch_size: 32
+gradient_accumulation_steps: 1
+use_deepseed: True
+mixed_precision: 'no'
