@@ -17,6 +17,7 @@ import tempfile
 import time
 import tree
 from typing import Tuple
+from dataclasses import dataclass
 
 # import deepspeed  # noqa: F401
 
@@ -45,6 +46,11 @@ from PIL import Image
 from torchvision.transforms.functional import pil_to_tensor, normalize
 import io
 import datasets
+
+@dataclass
+class GlobalConfig:
+    hydra: OmegaConf # TODO: better name?
+    deepspeed: DeepSpeedPlugin | None
 
 
 
@@ -149,7 +155,7 @@ def evaluate(
 
 
 
-def training_function(config: dict):
+def training_function(config: GlobalConfig):
     print("*** TRAINING ***")
 
     # Train has a bug somewhere that causes ACCELERATE_TORCH_DEVICE to not be set
@@ -160,31 +166,22 @@ def training_function(config: dict):
     # os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
     os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: comment out, need this for local training
 
-
-    # Sample hyper-parameters for learning rate, batch size, seed and a few other HPs
-    lr = config["lr"]
-    num_epochs = int(config["num_epochs"])
-    seed = int(config["seed"])
-    batch_size = int(config["batch_size"])
-    gradient_accumulation_steps = int(config["gradient_accumulation_steps"])
-
-
     # Initialize accelerator
     kwargs = {
-        "mixed_precision": config["mixed_precision"],
-        "gradient_accumulation_steps": config["gradient_accumulation_steps"],
+        "mixed_precision": config.hydra.mixed_precision,
+        "gradient_accumulation_steps": config.hydra.gradient_accumulation_steps,
     }
 
-    if config["use_deepseed"]:
-        ds_plugin = config["ds_plugin"]
-        ds_plugin.hf_ds_config.config["train_micro_batch_size_per_gpu"] = batch_size
+    if config.hydra.use_deepseed:
+        ds_plugin = config.deepspeed
+        ds_plugin.hf_ds_config.config["train_micro_batch_size_per_gpu"] = config.hydra.batch_size
         kwargs.update(deepspeed_plugin=ds_plugin)
 
     accelerator = Accelerator(
         **kwargs
     )
 
-    set_seed(seed)
+    set_seed(config.hydra.seed)
     train_ds = train.get_dataset_shard("train")
     valid_ds = train.get_dataset_shard("valid")
     train_ds_len = len(list(train_ds.iter_batches(batch_size=1))) # is this super inefficient?, I assume ok due to no assignment
@@ -203,7 +200,7 @@ def training_function(config: dict):
 
     optimizer = optimizer_cls(
         model.parameters(),
-        lr=lr,
+        lr=config.hydra.lr,
         betas=OPTIM_BETAS,
         eps=OPTIM_EPS,
     )
@@ -211,7 +208,7 @@ def training_function(config: dict):
     from ranger import Ranger
     optimizer = Ranger(
         model.parameters(),
-        lr=lr,
+        lr=config.hydra.lr,
     )
 
     # Instantiate scheduler
@@ -221,7 +218,7 @@ def training_function(config: dict):
 
     num_steps_per_epoch = 295
     total_training_steps = (
-        num_steps_per_epoch * 1 // gradient_accumulation_steps
+        num_steps_per_epoch * 1 // config.hydra.gradient_accumulation_steps
     )
 
     if (
@@ -250,21 +247,21 @@ def training_function(config: dict):
     # Now we train the model
     if accelerator.is_main_process:
         print("Starting training ...")
-        print("Number of batches on main process", train_ds_len // batch_size)
+        print("Number of batches on main process", train_ds_len // config.hydra.batch_size)
 
-    for epoch in range(num_epochs):
+    for epoch in range(config.hydra.num_epochs):
         fwd_time_sum, bwd_time_sum, optim_step_time_sum, load_batch_time_sum = 0, 0, 0, 0
         s_epoch = time.time()
         model.train()
         loss_sum = torch.tensor(0.0).to(accelerator.device)
 
         train_dataloader = train_ds.iter_torch_batches(
-            batch_size=batch_size,
+            batch_size=config.hydra.batch_size,
             collate_fn=collate_fn,
         )
 
         for step, batch in tqdm.tqdm(
-            enumerate(train_dataloader), total=train_ds_len // batch_size + 1
+            enumerate(train_dataloader), total=train_ds_len // config.hydra.batch_size + 1
         ):
 
             # We could avoid this line since we set the accelerator with
@@ -307,7 +304,7 @@ def training_function(config: dict):
 
 
             # as long as this is not the last step report here
-            if step != (train_ds_len // batch_size - 1):
+            if step != (train_ds_len // config.hydra.batch_size - 1):
                 train.report(
                     {
                         "epoch": epoch,
@@ -327,7 +324,7 @@ def training_function(config: dict):
                     }
                 )
 
-            if config["as_test"] and step >= 5:
+            if config.hydra.as_test and step >= 5:
                 break
 
         e_epoch = time.time()
@@ -341,7 +338,7 @@ def training_function(config: dict):
             accelerator=accelerator,
             bsize=32,
             ds_kwargs={"collate_fn": collate_fn_eval},
-            as_test=config["as_test"],
+            as_test=config.hydra.as_test,
         )
         accelerator.print("Eval result loss", eloss)
         accelerator.print("Eval perplex", perplex)
@@ -439,21 +436,19 @@ def training_function(config: dict):
             )
 
 
-        if config["as_test"]:
+        if config.hydra.as_test:
             break
 
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
-def main(config):
-    config = OmegaConf.to_container(config)
-    # Add deepspeed plugin to the config
-    if config["use_deepseed"]:
-        ds_plugin = DeepSpeedPlugin(hf_ds_config="deepspeed/ds_config_zero0.json")
-        config.update(ds_plugin=ds_plugin)
+def main(hydra_config):
+    deepspeed = DeepSpeedPlugin(hf_ds_config="deepspeed/ds_config_zero0.json") if hydra_config["use_deepseed"] else None
+    global_config = GlobalConfig(
+        hydra_config,
+        deepspeed,
 
-    breakpoint()
-
+    )
 
     runtime_envvars = dict(os.environ)
     ray.init(
@@ -469,7 +464,7 @@ def main(config):
 
     trainer = TorchTrainer(
         training_function,
-        train_loop_config=config,
+        train_loop_config=global_config,
         run_config=train.RunConfig(
             storage_path=os.path.abspath('checkpoints'),
             checkpoint_config=train.CheckpointConfig(
