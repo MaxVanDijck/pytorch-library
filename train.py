@@ -475,8 +475,8 @@ def main(hydra_config):
         ),
         scaling_config=train.ScalingConfig(
             num_workers=1,
-            use_gpu=False,
-            resources_per_worker={"CPU": 4, "GPU": 0},
+            use_gpu=True,
+            resources_per_worker={"CPU": 1, "GPU": 1},
         ),
         datasets=datasets,
         dataset_config=ray.train.DataConfig(datasets_to_split=["train", "valid"]),
