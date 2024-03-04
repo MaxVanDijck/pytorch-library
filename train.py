@@ -162,9 +162,9 @@ def training_function(config: GlobalConfig):
     # properly on multi-gpu nodes
     cuda_visible_device = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
     local_rank = int(os.environ["LOCAL_RANK"])
-    # device_id = cuda_visible_device[local_rank]
-    # os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
-    os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: comment out, need this for local training
+    device_id = cuda_visible_device[local_rank]
+    os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
+    # os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: comment out, need this for local training
 
     # Initialize accelerator
     kwargs = {
