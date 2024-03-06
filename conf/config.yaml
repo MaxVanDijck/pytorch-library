@@ -1,8 +1,11 @@
-as_test: True
-lr: 0.01
+as_test: False
+lr: 0.0002
 num_epochs: 5
 seed: 42
 batch_size: 32
 gradient_accumulation_steps: 1
-use_deepseed: False
 mixed_precision: 'no'
+
+# DeepSpeed Config
+use_deepseed: False
+deepspeed_config: "deepspeed/ds_config_zero0.json"

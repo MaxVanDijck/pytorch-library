@@ -123,8 +123,10 @@ def evaluate(
     for step, batch in tqdm.tqdm(
         enumerate(eval_dataloader), total=eval_ds_len // (bsize + 1)
     ):
+
+        batch = batch[0].to(accelerator.device), batch[1].to(accelerator.device)
         with torch.no_grad():
-            outputs = model(*batch)
+            outputs = model(batch[0], batch[1])
 
         loss = outputs["loss"]
         logits_out = F.softmax(outputs["logits"], dim=-1).argmax(1).tolist()
@@ -191,6 +193,8 @@ def training_function(config: GlobalConfig):
     model = Model(model_config)
 
 
+
+
     optimizer_cls = (
         torch.optim.AdamW
         if accelerator.state.deepspeed_plugin is None
@@ -205,11 +209,6 @@ def training_function(config: GlobalConfig):
         eps=OPTIM_EPS,
     )
     
-    from ranger import Ranger
-    optimizer = Ranger(
-        model.parameters(),
-        lr=config.hydra.lr,
-    )
 
     # Instantiate scheduler
     # Creates Dummy Scheduler if `scheduler` was specified in the config file or
@@ -231,10 +230,11 @@ def training_function(config: GlobalConfig):
             gamma=0.5,
         )
     else:
+        num_devices = 1
         lr_scheduler = DummyScheduler(
             optimizer,
-            warmup_num_steps=NUM_WARMUP_STEPS * args.num_devices,
-            total_num_steps=total_training_steps * args.num_devices,
+            warmup_num_steps=NUM_WARMUP_STEPS * num_devices,
+            total_num_steps=total_training_steps * num_devices,
         )
 
     # Prepare everything
@@ -266,13 +266,14 @@ def training_function(config: GlobalConfig):
 
             # We could avoid this line since we set the accelerator with
             # `device_placement=True`.
+            batch = batch[0].to(accelerator.device), batch[1].to(accelerator.device)
             s_load_batch = time.time()
             with accelerator.accumulate(model):
                 e_load_batch = time.time()
                 load_batch_time = e_load_batch - s_load_batch
                 load_batch_time_sum += load_batch_time
                 s_fwd = time.time()
-                outputs = model(*batch)
+                outputs = model(batch[0], batch[1])
                 loss = outputs["loss"]
                 loss_sum += loss.item()
                 e_fwd = time.time()
@@ -443,11 +444,10 @@ def training_function(config: GlobalConfig):
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(hydra_config):
-    deepspeed = DeepSpeedPlugin(hf_ds_config="deepspeed/ds_config_zero0.json") if hydra_config["use_deepseed"] else None
+    deepspeed = DeepSpeedPlugin(hf_ds_config=hydra_config.deepspeed_config) if hydra_config.use_deepseed else None
     global_config = GlobalConfig(
         hydra_config,
         deepspeed,
-
     )
 
     runtime_envvars = dict(os.environ)
@@ -476,7 +476,7 @@ def main(hydra_config):
         scaling_config=train.ScalingConfig(
             num_workers=1,
             use_gpu=True,
-            resources_per_worker={"CPU": 1, "GPU": 1},
+            resources_per_worker={"CPU": 4, "GPU": 1},
         ),
         datasets=datasets,
         dataset_config=ray.train.DataConfig(datasets_to_split=["train", "valid"]),
