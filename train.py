@@ -1,7 +1,8 @@
 import argparse
 import hydra
-from omegaconf import OmegaConf
-
+from hydra.utils import instantiate
+from omegaconf import DictConfig
+import logging
 from evaluate import load
 import torch.nn.functional as F
 
@@ -16,7 +17,7 @@ import re
 import tempfile
 import time
 import tree
-from typing import Tuple
+from typing import Optional, Tuple
 from dataclasses import dataclass
 
 # import deepspeed  # noqa: F401
@@ -47,12 +48,39 @@ from torchvision.transforms.functional import pil_to_tensor, normalize
 import io
 import datasets
 
+log = logging.getLogger(__name__)
+
+@dataclass
+class Metadata:
+    length: int
+
+    @classmethod
+    def from_ray_dataset(cls, dataset):
+        return cls(dataset.count())
+
+
+@dataclass
+class DatasetMetadata:
+    train: Metadata | None
+    eval: Metadata | None
+    test: Metadata | None
+
+    @classmethod
+    def from_ray_dataset_dict(cls, datasets):
+        return cls(
+           Metadata.from_ray_dataset(datasets["train"]) if "train" in datasets else None,
+           Metadata.from_ray_dataset(datasets["valid"]) if "valid" in datasets else None,
+           Metadata.from_ray_dataset(datasets["test"]) if "test" in datasets else None,
+        )
+
 @dataclass
 class GlobalConfig:
-    hydra: OmegaConf # TODO: better name?
+    hydra: DictConfig
     deepspeed: DeepSpeedPlugin | None
-
-
+    scaling_config: train.ScalingConfig
+    run_config: train.RunConfig
+    data_config: train.DataConfig
+    dataset_metadata: DatasetMetadata | None = None
 
 OPTIM_BETAS = (0.9, 0.999)
 OPTIM_EPS = 1e-6
@@ -65,6 +93,12 @@ def get_ray_dataset(split):
     hf_dataset = datasets.load_dataset("frgfm/imagenette", '320px')
     ray_ds = ray.data.from_huggingface(hf_dataset[split]).random_shuffle()
     return ray_ds
+
+def get_dataset(): 
+    return {
+        "train": get_ray_dataset('train'), 
+        "valid": get_ray_dataset('validation'),
+    }
 
 def collate_fn(batch):
     normalize = transforms.Normalize(
@@ -148,9 +182,9 @@ def evaluate(
         eval_loss = torch.mean(losses).item()
         perplexity = math.exp(eval_loss)
         precision_metric = load("precision")
-        precision = precision_metric.compute(references=labels, predictions=logits, average='micro')
+        precision = precision_metric.compute(references=labels, predictions=logits, average='micro')["precision"]
         accuracy_metric = load("accuracy")
-        accuracy = accuracy_metric.compute(references=labels, predictions=logits)
+        accuracy = accuracy_metric.compute(references=labels, predictions=logits)["accuracy"]
     except OverflowError:
         perplexity = float("inf")
     return perplexity, eval_loss, precision, accuracy
@@ -158,8 +192,6 @@ def evaluate(
 
 
 def training_function(config: GlobalConfig):
-    print("*** TRAINING ***")
-
     # Train has a bug somewhere that causes ACCELERATE_TORCH_DEVICE to not be set
     # properly on multi-gpu nodes
     cuda_visible_device = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
@@ -186,7 +218,7 @@ def training_function(config: GlobalConfig):
     set_seed(config.hydra.seed)
     train_ds = train.get_dataset_shard("train")
     valid_ds = train.get_dataset_shard("valid")
-    train_ds_len = len(list(train_ds.iter_batches(batch_size=1))) # is this super inefficient?, I assume ok due to no assignment
+    train_ds_len = config.dataset_metadata.train.length # TODO make into dataclass
 
     # Initialize model
     model_config = Config(block_type="basic")
@@ -227,7 +259,7 @@ def training_function(config: GlobalConfig):
         lr_scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer=optimizer,
             step_size=total_training_steps,
-            gamma=0.5,
+            gamma=0.3,
         )
     else:
         num_devices = 1
@@ -266,7 +298,7 @@ def training_function(config: GlobalConfig):
 
             # We could avoid this line since we set the accelerator with
             # `device_placement=True`.
-            batch = batch[0].to(accelerator.device), batch[1].to(accelerator.device)
+            # batch = batch[0].to(accelerator.device), batch[1].to(accelerator.device)
             s_load_batch = time.time()
             with accelerator.accumulate(model):
                 e_load_batch = time.time()
@@ -443,56 +475,55 @@ def training_function(config: GlobalConfig):
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
-def main(hydra_config):
-    deepspeed = DeepSpeedPlugin(hf_ds_config=hydra_config.deepspeed_config) if hydra_config.use_deepseed else None
-    global_config = GlobalConfig(
-        hydra_config,
-        deepspeed,
-    )
-
+def main(hydra_config: DictConfig):
+    # Initialize Ray
     runtime_envvars = dict(os.environ)
     ray.init(
         runtime_env={
             "working_dir": ".",
             "env_vars": runtime_envvars,
-            "excludes": ["checkpoints"]
+            "excludes": ["checkpoints"],
         }
     )
 
-    # Read data
-    datasets = {"train": get_ray_dataset('train'), "valid": get_ray_dataset('validation')}
+    # Initialize Ray Datasets
+    datasets = instantiate(hydra_config.dataset)
 
+    # Setup Config
+    deepspeed = DeepSpeedPlugin(hf_ds_config=hydra_config.deepspeed_config) if hydra_config.use_deepseed else None
+    ray_scaling_config = instantiate(hydra_config.scaling_config)
+    ray_run_config = instantiate(hydra_config.run_config)
+    ray_data_config = instantiate(hydra_config.data_config)
+    dataset_metadata = DatasetMetadata.from_ray_dataset_dict(datasets)
+    global_config = GlobalConfig(
+        hydra_config,
+        deepspeed,
+        ray_scaling_config,
+        ray_run_config,
+        ray_data_config,
+        dataset_metadata,
+    )
+    
+    # Initialize TorchTrainer
     trainer = TorchTrainer(
-        training_function,
+        train_loop_per_worker=training_function,
         train_loop_config=global_config,
-        run_config=train.RunConfig(
-            storage_path=os.path.abspath('checkpoints'),
-            checkpoint_config=train.CheckpointConfig(
-                num_to_keep=2,
-                checkpoint_score_attribute="perplexity",
-                checkpoint_score_order="min",
-            ),
-        ),
-        scaling_config=train.ScalingConfig(
-            num_workers=1,
-            use_gpu=True,
-            resources_per_worker={"CPU": 4, "GPU": 1},
-        ),
+        scaling_config=global_config.scaling_config,
+        run_config=global_config.run_config,
         datasets=datasets,
-        dataset_config=ray.train.DataConfig(datasets_to_split=["train", "valid"]),
+        dataset_config=global_config.data_config,
     )
 
-    result: train.Result = trainer.fit()
-    # `best_checkpoints` are sorted in increasing score order.
-    # (Ex: in this case, negative perplexity, since we set `checkpoint_score_order=min`)
-    best_checkpoint, best_checkpoint_metrics = result.best_checkpoints[-1]
+    # Run Training
+    result = trainer.fit()
 
-    print("Results are stored at:")
-    print(result.path)
-    print("Best checkpoint is stored at:")
-    print(best_checkpoint)
-    print(f"With perplexity: {best_checkpoint_metrics['perplexity']}")
+    # Log Results
+    # checkpoints are sorted in increasing score order.
+    best_checkpoint, best_checkpoint_metrics = result.best_checkpoints[-1]
+    log.info(f"Results are stored at: {result.path}")
+    log.info(f"Best checkpoint is stored at: {best_checkpoint}")
+    log.info(f"With metrics: {best_checkpoint_metrics}")
 
 
 if __name__ == "__main__":
-    main()
+    main() # type: ignore

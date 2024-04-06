@@ -6,7 +6,7 @@ import transformers
 # from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 
-from transformers import ResNetConfig, ResNetForImageClassification
+from transformers import ConvNextConfig, ConvNextForImageClassification
 
 
 BLOCK_MAPPING = {"basic": BasicBlock, "bottleneck": Bottleneck}
@@ -25,8 +25,8 @@ class Model(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
 
-        configuration = ResNetConfig(num_labels=10)
-        self.model = ResNetForImageClassification(configuration)
+        configuration = ConvNextConfig(num_labels=10)
+        self.model = ConvNextForImageClassification(configuration)
 
 
     def forward(self, tensor, labels=None):
