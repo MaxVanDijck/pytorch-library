@@ -18,17 +18,14 @@ from accelerate.utils import DummyOptim, DummyScheduler, set_seed
 import torch
 import tqdm
 
-from torchvision import transforms
 
 import ray
 from ray import train
 import ray.util.scheduling_strategies
 from ray.train.torch import TorchTrainer
 from ray.train import Checkpoint
+from typing import Callable
 
-from PIL import Image
-from torchvision.transforms.functional import pil_to_tensor
-import io
 
 log = logging.getLogger(__name__)
 
@@ -56,13 +53,28 @@ class DatasetMetadata:
         )
 
 @dataclass
+class DatasetCollateFns:
+    train: Callable | None
+    eval: Callable | None
+    test: Callable | None
+
+    @classmethod
+    def from_ray_collate_fn_dict(cls, collate_fns):
+        return cls(
+           collate_fns["train"] if "train" in collate_fns else None,
+           collate_fns["valid"] if "valid" in collate_fns else None,
+           collate_fns["test"] if "test" in collate_fns else None,
+        )
+
+@dataclass
 class GlobalConfig:
     hydra: DictConfig
     deepspeed: DeepSpeedPlugin | None
     scaling_config: train.ScalingConfig
     run_config: train.RunConfig
     data_config: train.DataConfig
-    dataset_metadata: DatasetMetadata | None = None
+    dataset_metadata: DatasetMetadata
+    dataset_collate_fns: DatasetCollateFns
 
 OPTIM_BETAS = (0.9, 0.999)
 OPTIM_EPS = 1e-6
@@ -72,49 +84,6 @@ ATTENTION_LAYER_NAME = "self_attn"
 
 
 
-def collate_fn(batch):
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    )
-    resize = transforms.Resize(128)
-    crop = transforms.CenterCrop(128)
-    erasing = transforms.RandomErasing(p=0.1, scale=(0.02, 0.33))
-    x = []
-    for item in batch['image']:
-        image = pil_to_tensor(Image.open(io.BytesIO(item['bytes'])))
-        if image.shape[0] == 1:
-            image = image.repeat(3, 1, 1)
-        image = resize(image)
-
-        image = crop(image).to(torch.float32)
-        image = normalize(image)
-        image = erasing(image)
-        x.append(image)
-    x = torch.stack(x).to(torch.float32)
-    y = torch.tensor(batch['label'], dtype=torch.uint8)
-    return x, y
-
-
-def collate_fn_eval(batch):
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    )
-    resize = transforms.Resize(128)
-    crop = transforms.CenterCrop(128)
-    x = []
-    for item in batch['image']:
-        image = pil_to_tensor(Image.open(io.BytesIO(item['bytes'])))
-        if image.shape[0] == 1:
-            image = image.repeat(3, 1, 1)
-        image = resize(image)
-        image = crop(image).to(torch.float32)
-        image = normalize(image)
-        x.append(image)
-    x = torch.stack(x).to(torch.float32)
-    y = torch.tensor(batch['label'], dtype=torch.uint8)
-    return x, y
 
 def evaluate(
     *, model, eval_ds, accelerator, bsize, ds_kwargs, as_test: bool = False
@@ -258,7 +227,7 @@ def training_function(config: GlobalConfig):
 
         train_dataloader = train_ds.iter_torch_batches(
             batch_size=config.hydra.batch_size,
-            collate_fn=collate_fn,
+            collate_fn=config.dataset_collate_fns.train,
         )
 
         for step, batch in tqdm.tqdm(
@@ -339,7 +308,7 @@ def training_function(config: GlobalConfig):
             eval_ds=valid_ds,
             accelerator=accelerator,
             bsize=32,
-            ds_kwargs={"collate_fn": collate_fn_eval},
+            ds_kwargs={"collate_fn": config.dataset_collate_fns.eval},
             as_test=config.hydra.as_test,
         )
         accelerator.print("Eval result loss", eloss)
@@ -457,6 +426,8 @@ def main(hydra_config: DictConfig):
 
     # Initialize Ray Datasets
     datasets = instantiate(hydra_config.dataset)
+    collate_fns = DatasetCollateFns.from_ray_collate_fn_dict(instantiate(hydra_config.collate_fns))
+    dataset_metadata = DatasetMetadata.from_ray_dataset_dict(datasets)
 
     # Setup Config
     deepspeed = DeepSpeedPlugin(hf_ds_config=hydra_config.deepspeed_config) if hydra_config.use_deepseed else None
@@ -465,7 +436,6 @@ def main(hydra_config: DictConfig):
     ray_run_config = instantiate(hydra_config.run_config)
     ray_data_config = instantiate(hydra_config.data_config)
 
-    dataset_metadata = DatasetMetadata.from_ray_dataset_dict(datasets)
     global_config = GlobalConfig(
         hydra_config,
         deepspeed,
@@ -473,6 +443,7 @@ def main(hydra_config: DictConfig):
         ray_run_config,
         ray_data_config,
         dataset_metadata,
+        collate_fns,
     )
     
     # Initialize TorchTrainer

@@ -14,6 +14,9 @@ mixed_precision: 'no'
 dataset:
   _target_: d.imagenette.get_dataset
 
+collate_fns:
+  _target_: d.imagenette.get_dataset_collate_fns
+
 # DeepSpeed Config
 use_deepseed: False
 deepspeed_config: "deepspeed/ds_config_zero0.json"
