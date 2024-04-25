@@ -12,7 +12,7 @@ mixed_precision: 'no'
 
 # Dataset Config
 dataset:
-  _target_: datasets.imagenette.get_dataset
+  _target_: d.imagenette.get_dataset
 
 # DeepSpeed Config
 use_deepseed: False
