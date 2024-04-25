@@ -2,8 +2,8 @@
 as_test: False
 seed: 42
 
-lr: 0.0001
-num_epochs: 2
+lr: 0.002
+num_epochs: 5
 batch_size: 32
 gradient_accumulation_steps: 1
 mixed_precision: 'no'
@@ -12,7 +12,7 @@ mixed_precision: 'no'
 
 # Dataset Config
 dataset:
-  _target_: train.get_dataset
+  _target_: datasets.imagenette.get_dataset
 
 # DeepSpeed Config
 use_deepseed: False

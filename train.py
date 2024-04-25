@@ -1,4 +1,3 @@
-import argparse
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -7,35 +6,19 @@ from evaluate import load
 import torch.nn.functional as F
 
 from example_model import Config, Model
-from filelock import FileLock
-import functools
-import json
 import math
 import os
-from pathlib import Path
-import re
 import tempfile
 import time
-import tree
-from typing import Optional, Tuple
 from dataclasses import dataclass
-
-# import deepspeed  # noqa: F401
+from ranger import Ranger
 
 from accelerate import Accelerator, DeepSpeedPlugin
 from accelerate.utils import DummyOptim, DummyScheduler, set_seed
 import torch
-import torch.nn as nn
 import tqdm
 
 from torchvision import transforms
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    get_linear_schedule_with_warmup,
-    get_polynomial_decay_schedule_with_warmup,
-    get_cosine_schedule_with_warmup
-)
 
 import ray
 from ray import train
@@ -44,9 +27,8 @@ from ray.train.torch import TorchTrainer
 from ray.train import Checkpoint
 
 from PIL import Image
-from torchvision.transforms.functional import pil_to_tensor, normalize
+from torchvision.transforms.functional import pil_to_tensor
 import io
-import datasets
 
 log = logging.getLogger(__name__)
 
@@ -89,16 +71,6 @@ OPTIM_WEIGHT_DECAY = 0.0
 ATTENTION_LAYER_NAME = "self_attn"
 
 
-def get_ray_dataset(split):
-    hf_dataset = datasets.load_dataset("frgfm/imagenette", '320px')
-    ray_ds = ray.data.from_huggingface(hf_dataset[split]).random_shuffle()
-    return ray_ds
-
-def get_dataset(): 
-    return {
-        "train": get_ray_dataset('train'), 
-        "valid": get_ray_dataset('validation'),
-    }
 
 def collate_fn(batch):
     normalize = transforms.Normalize(
@@ -146,7 +118,7 @@ def collate_fn_eval(batch):
 
 def evaluate(
     *, model, eval_ds, accelerator, bsize, ds_kwargs, as_test: bool = False
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     model.eval()
     losses = []
     labels = []
@@ -228,7 +200,7 @@ def training_function(config: GlobalConfig):
 
 
     optimizer_cls = (
-        torch.optim.AdamW
+        Ranger
         if accelerator.state.deepspeed_plugin is None
         or "optimizer" not in accelerator.state.deepspeed_plugin.deepspeed_config
         else DummyOptim
@@ -236,9 +208,6 @@ def training_function(config: GlobalConfig):
 
     optimizer = optimizer_cls(
         model.parameters(),
-        lr=config.hydra.lr,
-        betas=OPTIM_BETAS,
-        eps=OPTIM_EPS,
     )
     
 
@@ -247,7 +216,7 @@ def training_function(config: GlobalConfig):
     # else, creates `args.lr_scheduler_type` Scheduler
     # get train and valid dataset lengths
 
-    num_steps_per_epoch = 295
+    num_steps_per_epoch = train_ds_len / config.hydra.batch_size
     total_training_steps = (
         num_steps_per_epoch * 1 // config.hydra.gradient_accumulation_steps
     )
@@ -259,7 +228,7 @@ def training_function(config: GlobalConfig):
         lr_scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer=optimizer,
             step_size=total_training_steps,
-            gamma=0.3,
+            gamma=0.5,
         )
     else:
         num_devices = 1
@@ -491,9 +460,11 @@ def main(hydra_config: DictConfig):
 
     # Setup Config
     deepspeed = DeepSpeedPlugin(hf_ds_config=hydra_config.deepspeed_config) if hydra_config.use_deepseed else None
+
     ray_scaling_config = instantiate(hydra_config.scaling_config)
     ray_run_config = instantiate(hydra_config.run_config)
     ray_data_config = instantiate(hydra_config.data_config)
+
     dataset_metadata = DatasetMetadata.from_ray_dataset_dict(datasets)
     global_config = GlobalConfig(
         hydra_config,
@@ -522,7 +493,7 @@ def main(hydra_config: DictConfig):
     best_checkpoint, best_checkpoint_metrics = result.best_checkpoints[-1]
     log.info(f"Results are stored at: {result.path}")
     log.info(f"Best checkpoint is stored at: {best_checkpoint}")
-    log.info(f"With metrics: {best_checkpoint_metrics}")
+    log.info(f"With {hydra_config.run_config.checkpoint_config.checkpoint_score_attribute}: {best_checkpoint_metrics[hydra_config.run_config.checkpoint_config.checkpoint_score_attribute]}")
 
 
 if __name__ == "__main__":
