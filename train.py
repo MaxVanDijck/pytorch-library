@@ -76,13 +76,6 @@ class GlobalConfig:
     dataset_metadata: DatasetMetadata
     dataset_collate_fns: DatasetCollateFns
 
-OPTIM_BETAS = (0.9, 0.999)
-OPTIM_EPS = 1e-6
-NUM_WARMUP_STEPS = 10
-OPTIM_WEIGHT_DECAY = 0.0
-ATTENTION_LAYER_NAME = "self_attn"
-
-
 
 
 def evaluate(
@@ -203,7 +196,7 @@ def training_function(config: GlobalConfig):
         num_devices = 1
         lr_scheduler = DummyScheduler(
             optimizer,
-            warmup_num_steps=NUM_WARMUP_STEPS * num_devices,
+            warmup_num_steps=10 * num_devices,
             total_num_steps=total_training_steps * num_devices,
         )
 
