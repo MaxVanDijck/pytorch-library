@@ -15,6 +15,7 @@ py-cpuinfo = "*"
 timm = "*"
 evaluate = "*"
 pandas = "<2.2" # ray is currently broken
+scikit-learn = "*"
 
 [dev-packages]
 

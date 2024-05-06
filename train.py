@@ -36,13 +36,28 @@ from hooks import Hook
 log = logging.getLogger(__name__)
 
 @dataclass
+class DatasetCollateFns:
+    train: Callable | None
+    eval: Callable | None
+    test: Callable | None
+
+    @classmethod
+    def from_ray_collate_fn_dict(cls, collate_fns):
+        return cls(
+           collate_fns["train"] if "train" in collate_fns else None,
+           collate_fns["valid"] if "valid" in collate_fns else None,
+           collate_fns["test"] if "test" in collate_fns else None,
+        )
+
+@dataclass
 class Metadata:
     length: int
 
     @classmethod
     def from_ray_dataset(cls, dataset):
-        return cls(dataset.count())
-
+        return cls(
+            length=dataset.count()
+        )
 
 @dataclass
 class DatasetMetadata:
@@ -58,19 +73,6 @@ class DatasetMetadata:
            Metadata.from_ray_dataset(datasets["test"]) if "test" in datasets else None,
         )
 
-@dataclass
-class DatasetCollateFns:
-    train: Callable | None
-    eval: Callable | None
-    test: Callable | None
-
-    @classmethod
-    def from_ray_collate_fn_dict(cls, collate_fns):
-        return cls(
-           collate_fns["train"] if "train" in collate_fns else None,
-           collate_fns["valid"] if "valid" in collate_fns else None,
-           collate_fns["test"] if "test" in collate_fns else None,
-        )
 
 @dataclass
 class GlobalConfig:
@@ -152,7 +154,6 @@ class Trainer:
             **kwargs
         )
 
-
         set_seed(self.config.hydra.seed)
         self.model, self.optimizer, self.lr_scheduler = self.accelerator.prepare(self.model, self.optimizer, self.lr_scheduler)
 
@@ -211,14 +212,45 @@ class Trainer:
                 break
 
     def eval(self) -> None:
-        perplex, eloss, precision, accuracy = evaluate(
-            model=self.model,
-            eval_ds=self.valid_dataset,
-            accelerator=self.accelerator,
-            bsize=32,
-            ds_kwargs={"collate_fn": self.config.dataset_collate_fns.eval},
-            as_test=self.config.hydra.as_test,
-        )
+        self.model.eval()
+        losses = []
+        labels = []
+        logits = []
+
+        eval_dataloader = self.valid_dataset.iter_torch_batches(batch_size=self.config.hydra.batch_size, collate_fn=self.config.dataset_collate_fns.eval)
+        for step, batch in tqdm.tqdm(
+            enumerate(eval_dataloader), total=self.config.dataset_metadata.eval.length // (self.config.hydra.batch_size + 1)
+        ):
+
+            batch = batch[0].to(self.accelerator.device), batch[1].to(self.accelerator.device)
+            with torch.no_grad():
+                outputs = self.model(batch[0], batch[1])
+
+            loss = outputs["loss"]
+            logits_out = F.softmax(outputs["logits"], dim=-1).argmax(1).tolist()
+
+            # The tensors are gathered by concatenating them on the first dimension, so we
+            # add a new dimension to the scalar loss to get a tensor of shape (K,) for K
+            # workers.
+            losses.append(self.accelerator.gather(loss[None]))
+            labels += batch[1].tolist()
+            logits += logits_out
+
+            if self.config.hydra.as_test:
+                break
+
+        # We stack losses so that we have a tensor of shape (T, K) where T is the number of
+        # steps and K is the number of workers.
+        losses = torch.stack(losses)
+        try:
+            eval_loss = torch.mean(losses).item()
+            perplexity = math.exp(eval_loss)
+            precision_metric = load("precision")
+            precision = precision_metric.compute(references=labels, predictions=logits, average='micro')["precision"]
+            accuracy_metric = load("accuracy")
+            accuracy = accuracy_metric.compute(references=labels, predictions=logits)["accuracy"]
+        except OverflowError:
+            perplexity = float("inf")
 
     def test(self) -> None:
         raise NotImplementedError
@@ -245,32 +277,17 @@ class Trainer:
 
 
 def training_function(config: GlobalConfig):
-    train_ds_len = config.dataset_metadata.train.length # TODO make into dataclass
-
     # Initialize model
     model_config = Config(block_type="basic")
     model = Model(model_config)
 
+    # Initialize optimizer
+    optimizer = Ranger(model.parameters())
 
-
-    optimizer_cls = (
-        Ranger
-    )
-
-    optimizer = optimizer_cls(
-        model.parameters(),
-    )
-
-    
-
-    # Instantiate scheduler
-    # Creates Dummy Scheduler if `scheduler` was specified in the config file or
-    # else, creates `args.lr_scheduler_type` Scheduler
-    # get train and valid dataset lengths
-
-    num_steps_per_epoch = train_ds_len / config.hydra.batch_size
+    # Initialize lr_scheduler
+    num_steps_per_epoch = config.dataset_metadata.train.length / config.hydra.batch_size
     total_training_steps = (
-        num_steps_per_epoch * 1 // config.hydra.gradient_accumulation_steps
+        num_steps_per_epoch * config.hydra.num_epochs // config.hydra.gradient_accumulation_steps
     )
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
@@ -279,7 +296,7 @@ def training_function(config: GlobalConfig):
         gamma=0.5,
     )
 
-
+    # run trainer
     trainer = Trainer(config, model, optimizer, lr_scheduler)
     trainer.run()
 
@@ -353,52 +370,6 @@ def save(accelerator, model):
             time.perf_counter() - checkpoint_save_start,
         )
 
-def evaluate(
-    *, model, eval_ds, accelerator, bsize, ds_kwargs, as_test: bool = False
-) -> tuple[float, float]:
-    model.eval()
-    losses = []
-    labels = []
-    logits = []
-
-    eval_dataloader = eval_ds.iter_torch_batches(batch_size=bsize, **ds_kwargs)
-    eval_ds_len = len(list(eval_ds.iter_batches(batch_size=1)))
-    for step, batch in tqdm.tqdm(
-        enumerate(eval_dataloader), total=eval_ds_len // (bsize + 1)
-    ):
-
-        batch = batch[0].to(accelerator.device), batch[1].to(accelerator.device)
-        with torch.no_grad():
-            outputs = model(batch[0], batch[1])
-
-        loss = outputs["loss"]
-        logits_out = F.softmax(outputs["logits"], dim=-1).argmax(1).tolist()
-
-        # The tensors are gathered by concatenating them on the first dimension, so we
-        # add a new dimension to the scalar loss to get a tensor of shape (K,) for K
-        # workers.
-        losses.append(accelerator.gather(loss[None]))
-        labels += batch[1].tolist()
-        logits += logits_out
-
-        if as_test:
-            break
-
-    # We stack losses so that we have a tensor of shape (T, K) where T is the number of
-    # steps and K is the number of workers.
-    losses = torch.stack(losses)
-    try:
-        eval_loss = torch.mean(losses).item()
-        perplexity = math.exp(eval_loss)
-        precision_metric = load("precision")
-        precision = precision_metric.compute(references=labels, predictions=logits, average='micro')["precision"]
-        accuracy_metric = load("accuracy")
-        accuracy = accuracy_metric.compute(references=labels, predictions=logits)["accuracy"]
-    except OverflowError:
-        perplexity = float("inf")
-    return perplexity, eval_loss, precision, accuracy
-
-
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(hydra_config: DictConfig):
@@ -433,7 +404,7 @@ def main(hydra_config: DictConfig):
         dataset_metadata,
         collate_fns,
     )
-    
+
     # Initialize TorchTrainer
     trainer = TorchTrainer(
         train_loop_per_worker=training_function,

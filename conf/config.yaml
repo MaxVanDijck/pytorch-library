@@ -1,5 +1,5 @@
 # Training Config
-as_test: False
+as_test: True
 seed: 42
 
 lr: 0.002
