@@ -2,6 +2,7 @@ from enum import StrEnum, auto
 
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.optimizer import Optimizer
+from hooks.logger import LoggerHook
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -31,6 +32,7 @@ from ray.train.torch import TorchTrainer
 from ray.train import Checkpoint
 from typing import Callable
 from hooks import Hook
+from hooks.wandb import WandbHook
 
 
 log = logging.getLogger(__name__)
@@ -84,13 +86,27 @@ class GlobalConfig:
     dataset_metadata: DatasetMetadata
     dataset_collate_fns: DatasetCollateFns
 
+
 class Stage(StrEnum):
     BEFORE_RUN = auto()
     AFTER_RUN = auto()
     BEFORE_TRAIN = auto()
     AFTER_TRAIN = auto()
+    BEFORE_TRAIN_STEP = auto()
+    AFTER_TRAIN_STEP = auto()
     BEFORE_EVAL = auto()
     AFTER_EVAL = auto()
+
+
+@dataclass
+class HookState:
+    """
+    Container class for all metrics/values hooks should access
+    """
+    epoch = None
+    learning_rate = None
+    train_loss_step = None
+    val_loss_step = None
 
 class Trainer:
     def __init__(
@@ -106,6 +122,7 @@ class Trainer:
         self.lr_scheduler = lr_scheduler
 
         self._hooks: list[Hook] = []
+        self.hook_state = HookState()
 
     @property
     def max_epochs(self) -> int:
@@ -127,8 +144,10 @@ class Trainer:
         self._hooks.append(hook)
 
     def call_hooks(self, stage: Stage) -> None:
-        for hook in self._hooks:
-            getattr(hook, stage)(self)
+        """Calls registered hooks in main process"""
+        if self.accelerator.is_main_process:
+            for hook in self._hooks:
+                getattr(hook, stage)(self)
 
     def setup(self) -> None:
         # Ray.train has a bug somewhere that causes ACCELERATE_TORCH_DEVICE to not be set
@@ -169,6 +188,8 @@ class Trainer:
         for step, batch in tqdm.tqdm(
             enumerate(train_dataloader), total=self.config.dataset_metadata.train.length // self.config.hydra.batch_size + 1
         ):
+
+            self.call_hooks(Stage.BEFORE_TRAIN_STEP)
             with self.accelerator.accumulate(self.model):
                 outputs = self.model(batch[0], batch[1])
                 loss = outputs["loss"]
@@ -179,19 +200,14 @@ class Trainer:
                 self.optimizer.zero_grad()
 
 
-            if self.accelerator.is_main_process:
-                epoch = "dunno"
-                self.accelerator.print(
-                    f"[epoch {epoch} step {step}] "
-                    f"loss: {loss.item()}"
-                    f"Learning rate: {self.lr_scheduler.get_lr()[0]}"
-                )
-
             aggregated_loss = torch.mean(self.accelerator.gather(loss[None])).item()
 
+            self.hook_state.train_loss_step = aggregated_loss
+            self.hook_state.learning_rate = self.lr_scheduler.get_lr()[0]
+            self.call_hooks(Stage.AFTER_TRAIN_STEP)
 
             # as long as this is not the last step report here
-            if step != (self.config.dataset_metadata.train.length // self.config.hydra.batch_size - 1):
+            if step != (self.config.dataset_metadata.train.length // self.config.hydra.batch_size - 1) and False:
                 train.report(
                     {
                         "iteration": step,
@@ -256,9 +272,10 @@ class Trainer:
         raise NotImplementedError
 
     def run(self) -> None:
-        self.call_hooks(Stage.BEFORE_RUN)
         self.setup()
-        for _ in range(self.max_epochs):
+        self.call_hooks(Stage.BEFORE_RUN)
+        for epoch in range(self.max_epochs):
+            self.hook_state.epoch = epoch
             self.call_hooks(Stage.BEFORE_TRAIN)
             self.train()
             self.call_hooks(Stage.AFTER_TRAIN)
@@ -298,6 +315,8 @@ def training_function(config: GlobalConfig):
 
     # run trainer
     trainer = Trainer(config, model, optimizer, lr_scheduler)
+    trainer.register_hook(WandbHook())
+    trainer.register_hook(LoggerHook())
     trainer.run()
 
 
@@ -376,6 +395,7 @@ def main(hydra_config: DictConfig):
     # Initialize Ray
     runtime_envvars = dict(os.environ)
     ray.init(
+        log_to_driver=True,
         runtime_env={
             "working_dir": ".",
             "env_vars": runtime_envvars,
