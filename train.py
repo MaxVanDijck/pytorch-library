@@ -16,13 +16,12 @@ import math
 import os
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ranger import Ranger
 
 from accelerate import Accelerator, DeepSpeedPlugin
 from accelerate.utils import DummyOptim, DummyScheduler, set_seed
 import torch
-import tqdm
 
 
 import ray
@@ -103,12 +102,22 @@ class HookState:
     """
     Container class for all metrics/values hooks should access
     """
-    epoch = None
-    learning_rate = None
-    train_loss_step = None
-    val_loss_step = None
+    epoch: int | None = None
+    learning_rate: float | None = None
+
+    train_loss_step: float | None = None
+    train_step: int | None = None
+    train_metrics: dict = field(default_factory=dict)
+
+    val_loss_step: float | None = None
+    val_step: int | None = None
+    val_metrics: dict = field(default_factory=dict)
+
+
 
 class Trainer:
+    hook_state = HookState()
+
     def __init__(
         self, 
         config: GlobalConfig, 
@@ -122,7 +131,6 @@ class Trainer:
         self.lr_scheduler = lr_scheduler
 
         self._hooks: list[Hook] = []
-        self.hook_state = HookState()
 
     @property
     def max_epochs(self) -> int:
@@ -156,7 +164,7 @@ class Trainer:
         local_rank = int(os.environ["LOCAL_RANK"])
         device_id = cuda_visible_device[local_rank]
         # os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
-        os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: comment out, need this for local training
+        os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: find a way to automatically enable cpu, need this for local training
 
         # Initialize accelerator
         kwargs = {
@@ -185,11 +193,9 @@ class Trainer:
             collate_fn=self.config.dataset_collate_fns.train,
         )
 
-        for step, batch in tqdm.tqdm(
-            enumerate(train_dataloader), total=self.config.dataset_metadata.train.length // self.config.hydra.batch_size + 1
-        ):
-
+        for step, batch in enumerate(train_dataloader):
             self.call_hooks(Stage.BEFORE_TRAIN_STEP)
+
             with self.accelerator.accumulate(self.model):
                 outputs = self.model(batch[0], batch[1])
                 loss = outputs["loss"]
@@ -201,28 +207,10 @@ class Trainer:
 
 
             aggregated_loss = torch.mean(self.accelerator.gather(loss[None])).item()
-
+            self.hook_state.train_step = step
             self.hook_state.train_loss_step = aggregated_loss
             self.hook_state.learning_rate = self.lr_scheduler.get_lr()[0]
             self.call_hooks(Stage.AFTER_TRAIN_STEP)
-
-            # as long as this is not the last step report here
-            if step != (self.config.dataset_metadata.train.length // self.config.hydra.batch_size - 1) and False:
-                train.report(
-                    {
-                        "iteration": step,
-                        "train_loss_batch": aggregated_loss,
-                        "avg_train_loss_epoch": None,
-                        "eval_loss": None,
-                        "perplexity": None,
-                        "num_iterations": step + 1,
-                        "train_time_per_epoch": None,
-                        "eval_time_per_epoch": None,
-                        "avg_fwd_time_per_epoch": None,
-                        "avg_bwd_time_per_epoch": None,
-                        "learning_rate": self.lr_scheduler.get_lr()[0],
-                    }
-                )
 
             if self.config.hydra.as_test and step >= 5:
                 break
@@ -234,11 +222,7 @@ class Trainer:
         logits = []
 
         eval_dataloader = self.valid_dataset.iter_torch_batches(batch_size=self.config.hydra.batch_size, collate_fn=self.config.dataset_collate_fns.eval)
-        for step, batch in tqdm.tqdm(
-            enumerate(eval_dataloader), total=self.config.dataset_metadata.eval.length // (self.config.hydra.batch_size + 1)
-        ):
-
-            batch = batch[0].to(self.accelerator.device), batch[1].to(self.accelerator.device)
+        for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
                 outputs = self.model(batch[0], batch[1])
 
@@ -251,6 +235,9 @@ class Trainer:
             losses.append(self.accelerator.gather(loss[None]))
             labels += batch[1].tolist()
             logits += logits_out
+
+            self.hook_state.val_step = step
+            self.hook_state.val_loss_step = loss.item()
 
             if self.config.hydra.as_test:
                 break
@@ -267,9 +254,20 @@ class Trainer:
             accuracy = accuracy_metric.compute(references=labels, predictions=logits)["accuracy"]
         except OverflowError:
             perplexity = float("inf")
+            precision = float("inf")
+            accuracy = float("inf")
+
+        # TODO: refine saving + recording model checkpoints alongside metrics
+        self.hook_state.val_metrics = {
+            "perplexity": perplexity,
+            "precision": precision,
+            "accuracy": accuracy,
+        }
+
+        
 
     def test(self) -> None:
-        raise NotImplementedError
+        pass
 
     def run(self) -> None:
         self.setup()
@@ -281,7 +279,7 @@ class Trainer:
             self.call_hooks(Stage.AFTER_TRAIN)
             self.call_hooks(Stage.BEFORE_EVAL)
             self.eval()
-            save(self.accelerator, self.model)
+            save(self.accelerator, self.model, self.hook_state.val_metrics)
             self.call_hooks(Stage.AFTER_EVAL)
 
         self.test()
@@ -321,7 +319,7 @@ def training_function(config: GlobalConfig):
 
 
 
-def save(accelerator, model):
+def save(accelerator, model, metrics):
     with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
         accelerator.print(f"Saving the model locally at {temp_checkpoint_dir}")
         accelerator.wait_for_everyone()
@@ -377,7 +375,6 @@ def save(accelerator, model):
 
         # Note: After `train.report`, in the case of remote storage,
         # the checkpoint directory will be uploaded to the remote storage.
-        metrics = {}
         train.report(metrics, checkpoint=checkpoint)
 
         print(
@@ -439,7 +436,7 @@ def main(hydra_config: DictConfig):
     result = trainer.fit()
 
     # Log Results
-    # checkpoints are sorted in increasing score order.
+    # checkpoints are sorted in increasing score order, therefore grab last
     best_checkpoint, best_checkpoint_metrics = result.best_checkpoints[-1]
     log.info(f"Results are stored at: {result.path}")
     log.info(f"Best checkpoint is stored at: {best_checkpoint}")
