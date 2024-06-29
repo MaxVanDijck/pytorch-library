@@ -58,6 +58,50 @@ class Ranger(Optimizer):
         print("set state called")
         super(Ranger, self).__setstate__(state)
 
+    def unit_norm(self, x):
+        """ axis-based Euclidean norm"""
+        # verify shape
+        keepdim = True
+        dim = None
+
+        xlen = len(x.shape)
+        # print(f"xlen = {xlen}")
+
+        if xlen <= 1:
+            keepdim = False
+        elif xlen in (2, 3):  # linear layers
+            dim = 1
+        elif xlen == 4:  # conv kernels
+            dim = (1, 2, 3)
+        else:
+            dim = tuple(
+                [x for x in range(1, xlen)]
+            )  # create 1,..., xlen-1 tuple, while avoiding last dim ...
+
+        return x.norm(dim=dim, keepdim=keepdim, p=2.0)
+
+    def agc(self, p):
+        """clip gradient values in excess of the unitwise norm.
+        the hardcoded 1e-6 is simple stop from div by zero and no relation to standard optimizer eps
+        """
+
+        # params = [p for p in parameters if p.grad is not None]
+        # if not params:
+        #    return
+
+        # for p in params:
+        self.agc_eps = 1e-3
+        p_norm = self.unit_norm(p).clamp_(self.agc_eps)
+        g_norm = self.unit_norm(p.grad)
+    
+        self.agc_clip_val = 1
+        max_norm = p_norm * self.agc_clip_val
+
+        clipped_grad = p.grad * (max_norm / g_norm.clamp(min=1e-6))
+
+        new_grads = torch.where(g_norm > max_norm, clipped_grad, p.grad)
+        p.grad.detach().copy_(new_grads)
+
 
     def step(self, closure=None):
         loss = None
@@ -71,6 +115,7 @@ class Ranger(Optimizer):
         for group in self.param_groups:
 
             for p in group['params']:
+                self.agc(p)
                 if p.grad is None:
                     continue
                 grad = p.grad.data.float()

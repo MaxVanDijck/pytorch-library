@@ -163,8 +163,8 @@ class Trainer:
         cuda_visible_device = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
         local_rank = int(os.environ["LOCAL_RANK"])
         device_id = cuda_visible_device[local_rank]
-        # os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
-        os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: find a way to automatically enable cpu, need this for local training
+        os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
+        # os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: find a way to automatically enable cpu, need this for local training
 
         # Initialize accelerator
         kwargs = {
@@ -201,6 +201,7 @@ class Trainer:
                 loss = outputs["loss"]
                 loss_total += loss.item()
                 self.accelerator.backward(loss)
+                torch.nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), 1)
                 self.optimizer.step()
                 self.lr_scheduler.step()
                 self.optimizer.zero_grad()
@@ -297,13 +298,19 @@ def training_function(config: GlobalConfig):
     model = Model(model_config)
 
     # Initialize optimizer
+    from optimizer import MyOptim
+    from madgrad import MADGRAD
     optimizer = Ranger(model.parameters())
+    optimizer = torch.optim.Adadelta(model.parameters())
+    # optimizer = MyOptim(model.parameters(), lr=config.hydra.lr)
+    # optimizer = MADGRAD(model.parameters(), lr=config.hydra.lr)
+
 
     # Initialize lr_scheduler
     num_steps_per_epoch = config.dataset_metadata.train.length / config.hydra.batch_size
     total_training_steps = (
         num_steps_per_epoch * config.hydra.num_epochs // config.hydra.gradient_accumulation_steps
-    )
+    ) * 1_000_000_000_000 # TODO remove, disable schedule for now
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer=optimizer,

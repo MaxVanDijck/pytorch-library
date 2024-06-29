@@ -1,8 +1,8 @@
 # Training Config
-as_test: True
+as_test: False
 seed: 42
 
-lr: 0.002
+lr: 0.0005
 num_epochs: 5
 batch_size: 32
 gradient_accumulation_steps: 1
@@ -25,10 +25,10 @@ deepspeed_config: "deepspeed/ds_config_zero0.json"
 scaling_config:
   _target_: ray.train.ScalingConfig
   num_workers: 1
-  use_gpu: False
+  use_gpu: True
   resources_per_worker:
-    CPU: 4
-    GPU: 0
+    CPU: 2
+    GPU: 1
 
 run_config:
   _target_: ray.train.RunConfig
