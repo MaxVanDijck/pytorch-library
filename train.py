@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from ranger import Ranger
 
 from accelerate import Accelerator, DeepSpeedPlugin
-from accelerate.utils import DummyOptim, DummyScheduler, set_seed
+from accelerate.utils import set_seed
 import torch
 
 

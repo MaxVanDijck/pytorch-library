@@ -12,10 +12,10 @@ mixed_precision: 'no'
 
 # Dataset Config
 dataset:
-  _target_: d.imagenette.get_dataset
+  _target_: d.isic_2024_challenge.get_dataset
 
 collate_fns:
-  _target_: d.imagenette.get_dataset_collate_fns
+  _target_: d.isic_2024_challenge.get_dataset_collate_fns
 
 # DeepSpeed Config
 use_deepseed: False
