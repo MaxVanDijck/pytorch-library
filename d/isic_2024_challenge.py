@@ -10,8 +10,8 @@ import io
 # document that the user needs to add these two functions with the correct keys and return types
 def get_dataset(): 
     return {
-        "train": get_ray_dataset(), 
-        "valid": get_ray_dataset(),
+        "train": get_ray_dataset(0, 80, 0, 3, 0, 0), 
+        "valid": get_ray_dataset(1000, 1020, 3, 5, 0, 0), 
     }
 
 def get_dataset_collate_fns():
@@ -21,8 +21,13 @@ def get_dataset_collate_fns():
     }
 
 
-def get_ray_dataset():
-    return ray.data.read_webdataset("~/max/pytorch-library/data/isic-2024-challenge/webdataset.tar")
+def get_ray_dataset(start: int, end: int, pos_start: int, pos_end: int, pos_old_start: int, pos_old_end: int):
+    return ray.data.read_webdataset(
+            [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-negative-2024_{str(i).zfill(6)}.tar" for i in range(start, end)] +
+            [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-positive-2024_{str(i).zfill(6)}.tar" for i in range(pos_start, pos_end)] +
+            [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-positive-old_{str(i).zfill(6)}.tar" for i in range(pos_old_start, pos_old_end)],
+            shuffle="files",
+        ).randomize_block_order()
 
 
 def collate_fn_train(batch):
@@ -32,17 +37,21 @@ def collate_fn_train(batch):
     )
     resize = transforms.Resize(128)
     crop = transforms.CenterCrop(128)
-    erasing = transforms.RandomErasing(p=0.1, scale=(0.02, 0.33))
+    vflip = transforms.RandomVerticalFlip(p=0.5)
+    hflip = transforms.RandomHorizontalFlip(p=0.5)
+    erasing = transforms.RandomErasing(p=0.4, scale=(0.02, 0.33))
 
     x = []
     labels = []
-    for metadata, item in zip(batch['metadata.json'], batch['output.jpg']):
-        image = pil_to_tensor(Image.open(io.BytesIO(item['bytes'])))
+    for metadata, item in zip(batch['metadata.json'], batch['image.jpg']):
+        image = torch.from_numpy(item.transpose((2,0,1)))
         if image.shape[0] == 1:
             image = image.repeat(3, 1, 1)
         image = resize(image)
 
         image = crop(image).to(torch.float32)
+        image = vflip(hflip(image))
+        image = image / 256
         image = normalize(image)
         image = erasing(image)
 
@@ -77,6 +86,7 @@ def collate_fn_train(batch):
 
             if metadata["benign_malignant"] == "indeterminate/malignant":
                 labels.append(1)
+                x.append(image)
 
             if metadata["benign_malignant"] == "malignant":
                 labels.append(1)
@@ -85,7 +95,7 @@ def collate_fn_train(batch):
             pass
 
     x = torch.stack(x).to(torch.float32)
-    y = torch.tensor(labels, dtype=torch.uint8)
+    y = torch.tensor(labels, dtype=torch.float32)
     return x, y
 
 
@@ -106,6 +116,6 @@ def collate_fn_valid(batch):
         image = normalize(image)
         x.append(image)
     x = torch.stack(x).to(torch.float32)
-    y = torch.tensor(batch['label'], dtype=torch.uint8)
+    y = torch.tensor(batch['label'], dtype=torch.float32)
     return x, y
 

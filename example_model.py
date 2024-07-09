@@ -26,12 +26,12 @@ class Config(PretrainedConfig):
 class Model(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
-        self.model = create_model('resnext50d_32x4d', pretrained=False, num_classes=10)
+        self.model = create_model('resnet18', pretrained=True, num_classes=1)
 
     def forward(self, tensor, labels=None):
-        logits = self.model(tensor)
+        logits = torch.nn.functional.sigmoid(self.model(tensor))
         if labels is not None:
-            loss = torch.nn.functional.cross_entropy(logits, labels.to(self.device), label_smoothing=0.1)
+            loss = torch.nn.functional.binary_cross_entropy(logits, labels.to(self.device).unsqueeze(1))
             return {"loss": loss, "logits": logits}
         return {"logits": logits}
 

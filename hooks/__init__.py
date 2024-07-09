@@ -28,3 +28,6 @@ class Hook:
 
     def after_eval(self, runner) -> None:
         pass
+
+    def after_eval_step(self, runner) -> None:
+        pass

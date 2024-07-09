@@ -1,9 +1,9 @@
 # Training Config
-as_test: True
+as_test: False
 seed: 42
 
-lr: 0.002
-num_epochs: 5
+lr: 0.0002
+num_epochs: 50
 batch_size: 32
 gradient_accumulation_steps: 1
 mixed_precision: 'no'
@@ -25,10 +25,10 @@ deepspeed_config: "deepspeed/ds_config_zero0.json"
 scaling_config:
   _target_: ray.train.ScalingConfig
   num_workers: 1
-  use_gpu: False
+  use_gpu: True
   resources_per_worker:
     CPU: 4
-    GPU: 0
+    GPU: 1
 
 run_config:
   _target_: ray.train.RunConfig
@@ -38,7 +38,7 @@ run_config:
   checkpoint_config:
     _target_: ray.train.CheckpointConfig
     num_to_keep: 2
-    checkpoint_score_attribute: "accuracy"
+    checkpoint_score_attribute: "roc_auc_score"
     checkpoint_score_order: "max"
 
 data_config:

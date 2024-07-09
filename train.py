@@ -95,6 +95,7 @@ class Stage(StrEnum):
     AFTER_TRAIN_STEP = auto()
     BEFORE_EVAL = auto()
     AFTER_EVAL = auto()
+    AFTER_EVAL_STEP = auto()
 
 
 @dataclass
@@ -163,8 +164,8 @@ class Trainer:
         cuda_visible_device = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
         local_rank = int(os.environ["LOCAL_RANK"])
         device_id = cuda_visible_device[local_rank]
-        # os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
-        os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: find a way to automatically enable cpu, need this for local training
+        os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{device_id}"
+        # os.environ["ACCELERATE_TORCH_DEVICE"] = "cpu" # TODO: find a way to automatically enable cpu, need this for local training
 
         # Initialize accelerator
         kwargs = {
@@ -191,6 +192,7 @@ class Trainer:
         train_dataloader = self.train_dataset.iter_torch_batches(
             batch_size=self.config.hydra.batch_size,
             collate_fn=self.config.dataset_collate_fns.train,
+            local_shuffle_buffer_size=32
         )
 
         for step, batch in enumerate(train_dataloader):
@@ -220,6 +222,7 @@ class Trainer:
         losses = []
         labels = []
         logits = []
+        raw_output = []
 
         eval_dataloader = self.valid_dataset.iter_torch_batches(batch_size=self.config.hydra.batch_size, collate_fn=self.config.dataset_collate_fns.eval)
         for step, batch in enumerate(eval_dataloader):
@@ -227,17 +230,19 @@ class Trainer:
                 outputs = self.model(batch[0], batch[1])
 
             loss = outputs["loss"]
-            logits_out = F.softmax(outputs["logits"], dim=-1).argmax(1).tolist()
 
             # The tensors are gathered by concatenating them on the first dimension, so we
             # add a new dimension to the scalar loss to get a tensor of shape (K,) for K
             # workers.
             losses.append(self.accelerator.gather(loss[None]))
+
             labels += batch[1].tolist()
-            logits += logits_out
+            logits += torch.round(outputs["logits"].squeeze(1)).tolist()
+            raw_output += outputs["logits"].squeeze(1).tolist()
 
             self.hook_state.val_step = step
             self.hook_state.val_loss_step = loss.item()
+            self.call_hooks(Stage.AFTER_EVAL_STEP)
 
             if self.config.hydra.as_test:
                 break
@@ -252,16 +257,20 @@ class Trainer:
             precision = precision_metric.compute(references=labels, predictions=logits, average='micro')["precision"]
             accuracy_metric = load("accuracy")
             accuracy = accuracy_metric.compute(references=labels, predictions=logits)["accuracy"]
+            roc_auc_score_metric = load("roc_auc")
+            roc_auc_score = roc_auc_score_metric.compute(references=labels, prediction_scores=raw_output)["roc_auc"]
         except OverflowError:
             perplexity = float("inf")
             precision = float("inf")
             accuracy = float("inf")
+            roc_auc_score = float("inf")
 
         # TODO: refine saving + recording model checkpoints alongside metrics
         self.hook_state.val_metrics = {
             "perplexity": perplexity,
             "precision": precision,
             "accuracy": accuracy,
+            "roc_auc_score": roc_auc_score,
         }
 
         
@@ -297,7 +306,7 @@ def training_function(config: GlobalConfig):
     model = Model(model_config)
 
     # Initialize optimizer
-    optimizer = Ranger(model.parameters())
+    optimizer = torch.optim.AdamW(model.parameters())
 
     # Initialize lr_scheduler
     num_steps_per_epoch = config.dataset_metadata.train.length / config.hydra.batch_size
@@ -396,7 +405,7 @@ def main(hydra_config: DictConfig):
         runtime_env={
             "working_dir": ".",
             "env_vars": runtime_envvars,
-            "excludes": ["checkpoints"],
+            "excludes": ["checkpoints", "data"],
         }
     )
 
