@@ -316,8 +316,8 @@ def training_function(config: GlobalConfig):
 
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer=optimizer,
-        step_size=total_training_steps,
-        gamma=0.5,
+        step_size=2000,
+        gamma=0.1,
     )
 
     # run trainer

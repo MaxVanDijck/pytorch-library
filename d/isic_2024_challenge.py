@@ -8,9 +8,18 @@ import io
 
 # TODO:
 # document that the user needs to add these two functions with the correct keys and return types
-def get_dataset(): 
+def get_dataset_pretraining(): 
+    # pretraining dataset
     return {
-        "train": get_ray_dataset(0, 80, 0, 3, 0, 0), 
+        "train": get_ray_dataset(0, 0, 0, 0, 0, 95), 
+        "valid": get_ray_dataset(1000, 1020, 3, 5, 0, 0), 
+    }
+
+
+def get_dataset(): 
+    # fine tuning dataset
+    return {
+        "train": get_ray_dataset(0, 6, 0, 3, 0, 0), 
         "valid": get_ray_dataset(1000, 1020, 3, 5, 0, 0), 
     }
 
@@ -25,9 +34,10 @@ def get_ray_dataset(start: int, end: int, pos_start: int, pos_end: int, pos_old_
     return ray.data.read_webdataset(
             [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-negative-2024_{str(i).zfill(6)}.tar" for i in range(start, end)] +
             [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-positive-2024_{str(i).zfill(6)}.tar" for i in range(pos_start, pos_end)] +
-            [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-positive-old_{str(i).zfill(6)}.tar" for i in range(pos_old_start, pos_old_end)],
+            [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-positive-old_{str(i).zfill(6)}.tar" for i in range(pos_old_start, pos_old_end)] +
+            [f"~/max/pytorch-library/data/isic-2024-challenge/webdataset-negative-old_{str(i).zfill(6)}.tar" for i in range(pos_old_start, pos_old_end*3)],
             shuffle="files",
-        ).randomize_block_order()
+        ).random_shuffle()
 
 
 def collate_fn_train(batch):
@@ -51,9 +61,9 @@ def collate_fn_train(batch):
 
         image = crop(image).to(torch.float32)
         image = vflip(hflip(image))
-        image = image / 256
+        image = image / 255
         image = normalize(image)
-        image = erasing(image)
+        #image = erasing(image)
 
         try:
             if metadata["iddx_1"] == "Benign":
