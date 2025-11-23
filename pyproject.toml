@@ -1,0 +1,29 @@
+[project]
+name = ""
+version = "0.0.1"
+requires-python = "~=3.12"
+dependencies = [
+    "ray[all]",
+    "hydra-core",
+    "torch",
+    "datasets",
+    "accelerate",
+    "transformers",
+    "deepspeed>=0.13.3",
+    "py-cpuinfo",
+    "timm",
+    "evaluate",
+    "pandas<2.2",
+    "scikit-learn",
+    "wandb",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"

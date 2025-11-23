@@ -2,3 +2,6 @@
 data/*
 checkpoints/*
 outputs/*
+
+.venv
+__pycache__
